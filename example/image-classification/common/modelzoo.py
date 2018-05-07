@@ -44,6 +44,10 @@ _default_model_info = {
                                           'params':_base_model_url+'imagenet-11k-place365-ch/resnet-152-0000.params'},
     'imagenet11k-place365ch-resnet-50': {'symbol':_base_model_url+'imagenet-11k-place365-ch/resnet-50-symbol.json',
                                          'params':_base_model_url+'imagenet-11k-place365-ch/resnet-50-0000.params'},
+    'imagenet1k-vgg-16': {'symbol':_base_model_url+'imagenet/vgg/vgg16-symbol.json',
+                          'params':_base_model_url+'imagenet/vgg/vgg16-0000.params'},
+    'imagenet1k-vgg-19': {'symbol':_base_model_url+'imagenet/vgg/vgg19-symbol.json',
+                          'params':_base_model_url+'imagenet/vgg/vgg19-0000.params'},
 }
 
 def download_model(model_name, dst_dir='./', meta_info=None):

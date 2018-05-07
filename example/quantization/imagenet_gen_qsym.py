@@ -54,8 +54,13 @@ def save_params(fname, arg_params, aux_params, logger=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate a calibrated quantized model from a FP32 model')
     parser.add_argument('--ctx', type=str, default='gpu')
-    parser.add_argument('--model', type=str, choices=['imagenet1k-resnet-152', 'imagenet1k-inception-bn'],
-                        help='currently only supports imagenet1k-resnet-152 or imagenet1k-inception-bn')
+    parser.add_argument('--model', type=str, choices=['imagenet1k-resnet-152',
+                                                      'imagenet1k-resnet-101',
+                                                      'imagenet1k-resnet-50',
+                                                      'imagenet1k-inception-bn',
+                                                      'imagenet1k-inception-v3',
+                                                      'imagenet1k-vgg-16',
+                                                      'imagenet1k-vgg-19',])
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--label-name', type=str, default='softmax_label')
     parser.add_argument('--calib-dataset', type=str, default='data/val_256_q90.rec',
@@ -111,12 +116,17 @@ if __name__ == '__main__':
     logger.info('calibration mode set to %s' % calib_mode)
 
     # download calibration dataset
-    if calib_mode != 'none':
+    if calib_mode != 'none' and args.model != 'imagenet1k-inception-v3':
         download_calib_dataset('http://data.mxnet.io/data/val_256_q90.rec', args.calib_dataset)
 
     # download model
-    prefix, epoch = download_model(model_name=args.model, logger=logger)
-    sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
+    # inception-v3 is a self-trained model
+    if args.model == 'imagenet1k-inception-v3':
+        prefix, epoch = "./model/Inception-7", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/Inception-7", 0)
+    else:
+        prefix, epoch = download_model(model_name=args.model, logger=logger)
+        sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
 
     # get batch size
     batch_size = args.batch_size
@@ -131,11 +141,14 @@ if __name__ == '__main__':
     data_nthreads = args.data_nthreads
 
     # get image shape
-    image_shape = args.image_shape
+    if args.model == 'imagenet1k-inception-v3':
+        image_shape = '3,299,299'
+    else:
+        image_shape = args.image_shape
 
     exclude_first_conv = args.exclude_first_conv
     excluded_sym_names = []
-    if args.model == 'imagenet1k-resnet-152':
+    if args.model.find("resnet") != -1:
         rgb_mean = '0,0,0'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                  or name.find('sc') != -1
@@ -148,11 +161,26 @@ if __name__ == '__main__':
                                                                  or name.find('fc') != -1)
         if exclude_first_conv:
             excluded_sym_names = ['conv_1']
+    elif args.model.find("vgg") != -1:
+        rgb_mean = '0,0,0'
+	calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
+                                                                 or name.find('fc') != -1)
+	if exclude_first_conv:
+	    excluded_sym_names = ['conv1_1', 'relu1_1']
+    elif args.model == 'imagenet1k-inception-v3':
+        rgb_mean = '0,0,0'
+        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
+                                                                 or name.find('fc') != -1)
+	if exclude_first_conv:
+	    excluded_sym_names = ['conv_conv2d']
+
     else:
         raise ValueError('model %s is not supported in this script' % args.model)
     
-    if args.ctx == 'cpu':
+    if args.ctx == 'cpu' and args.model.find("vgg") == -1:
         excluded_sym_names += ['fc1']
+    elif args.ctx == 'cpu' and args.model.find("vgg") != -1:
+        excluded_sym_names += ['fc6', 'fc7', 'fc8']
 
     label_name = args.label_name
     logger.info('label_name = %s' % label_name)
