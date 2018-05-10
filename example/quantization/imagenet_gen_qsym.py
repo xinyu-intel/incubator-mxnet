@@ -216,7 +216,7 @@ if __name__ == '__main__':
 
         cqsym, qarg_params, aux_params = quantize_model(sym=sym, arg_params=arg_params, aux_params=aux_params,
                                                         ctx=ctx, excluded_sym_names=excluded_sym_names,
-                                                        calib_mode=calib_mode, calib_data=data,
+                                                        calib_mode=calib_mode, calib_data=data, label_names=(label_name,),
                                                         num_calib_examples=num_calib_batches * batch_size,
                                                         calib_layer=calib_layer, logger=logger)
         if calib_mode == 'entropy':
