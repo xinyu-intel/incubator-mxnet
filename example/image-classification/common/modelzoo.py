@@ -48,6 +48,10 @@ _default_model_info = {
                           'params':_base_model_url+'imagenet/vgg/vgg16-0000.params'},
     'imagenet1k-vgg-19': {'symbol':_base_model_url+'imagenet/vgg/vgg19-symbol.json',
                           'params':_base_model_url+'imagenet/vgg/vgg19-0000.params'},
+    'imagenet1k-squeezenet-v1_0': {'symbol':_base_model_url+'imagenet/squeezenet/squeezenet_v1.0-symbol.json',
+                          'params':_base_model_url+'imagenet/squeezenet/squeezenet_v1.0-0000.params'},
+    'imagenet1k-squeezenet-v1_1': {'symbol':_base_model_url+'imagenet/squeezenet/squeezenet_v1.1-symbol.json',
+                          'params':_base_model_url+'imagenet/squeezenet/squeezenet_v1.1-0000.params'},
 }
 
 def download_model(model_name, dst_dir='./', meta_info=None):

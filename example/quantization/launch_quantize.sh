@@ -47,13 +47,13 @@ python imagenet_gen_qsym.py --model=imagenet1k-inception-bn --calib-dataset=./da
 
 python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-mode=none --ctx=cpu
 
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=5 --calib-mode=naive --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=10 --calib-mode=naive --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=50 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=5 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=10 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=50 --calib-mode=naive --ctx=cpu
 
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
 
 # Inception-V3 (self-trained)
 
@@ -66,3 +66,15 @@ python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./da
 python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
 python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
 python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
+
+# Squeezenet 1.0,1.1
+
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-mode=none --ctx=cpu
+
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=5 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=10 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=50 --calib-mode=naive --ctx=cpu
+
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-squeezenet-v1_0 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=50 --calib-mode=entropy --ctx=cpu

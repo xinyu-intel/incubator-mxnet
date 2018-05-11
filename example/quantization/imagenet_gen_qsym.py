@@ -60,7 +60,9 @@ if __name__ == '__main__':
                                                       'imagenet1k-inception-bn',
                                                       'imagenet1k-inception-v3',
                                                       'imagenet1k-vgg-16',
-                                                      'imagenet1k-vgg-19',])
+                                                      'imagenet1k-vgg-19',
+                                                      'imagenet1k-squeezenet-v1_0',
+                                                      'imagenet1k-squeezenet-v1_1',])
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--label-name', type=str, default='softmax_label')
     parser.add_argument('--calib-dataset', type=str, default='data/val_256_q90.rec',
@@ -151,33 +153,43 @@ if __name__ == '__main__':
     if args.model.find("resnet") != -1:
         rgb_mean = '0,0,0'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
-                                                                 or name.find('sc') != -1
-                                                                 or name.find('fc') != -1)
+                                                                 or name.find('sc') != -1)
+                                                                 #or name.find('fc') != -1)
         if exclude_first_conv:
             excluded_sym_names = ['conv0']
     elif args.model == 'imagenet1k-inception-bn':
         rgb_mean = '123.68,116.779,103.939'
-        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
-                                                                 or name.find('fc') != -1)
+        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
+                                                                 #or name.find('fc') != -1)
         if exclude_first_conv:
             excluded_sym_names = ['conv_1']
     elif args.model.find("vgg") != -1:
         rgb_mean = '0,0,0'
-	calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
-                                                                 or name.find('fc') != -1)
-	if exclude_first_conv:
-	    excluded_sym_names = ['conv1_1', 'relu1_1']
+        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
+                                                                 #or name.find('fc') != -1)
+        if exclude_first_conv:
+            excluded_sym_names = ['conv1_1', 'relu1_1']
     elif args.model == 'imagenet1k-inception-v3':
         rgb_mean = '0,0,0'
+        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
+                                                                 #or name.find('fc') != -1)
+        if exclude_first_conv:
+            excluded_sym_names = ['conv_conv2d']
+    elif args.model.find("squeezenet") != -1:
+        rgb_mean = '0,0,0'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
-                                                                 or name.find('fc') != -1)
-	if exclude_first_conv:
-	    excluded_sym_names = ['conv_conv2d']
+                                                                 or name.find('fire') != -1
+                                                                 and name.find('relu') == -1
+                                                                 and name.find('concat') == -1
+                                                                 and name.find('weight') == -1
+                                                                 and name.find('bias') == -1)
+        if exclude_first_conv:
+            excluded_sym_names = ['conv1', 'relu_conv1']
 
     else:
         raise ValueError('model %s is not supported in this script' % args.model)
     
-    if args.ctx == 'cpu' and args.model.find("vgg") == -1:
+    if args.ctx == 'cpu' and args.model.find("vgg") == -1 and args.model.find("squeezenet") == -1:
         excluded_sym_names += ['fc1']
     elif args.ctx == 'cpu' and args.model.find("vgg") != -1:
         excluded_sym_names += ['fc6', 'fc7', 'fc8']

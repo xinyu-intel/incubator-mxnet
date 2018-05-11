@@ -74,3 +74,17 @@ python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batch
 python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-5batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
 python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-10batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
 python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
+
+# Squeezenet 1.0,1.1
+
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-5batches-naive-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-10batches-naive-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-50batches-naive-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-5batches-entropy-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-10batches-entropy-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-quantized-50batches-entropy-symbol.json --param-file=./model/imagenet1k-squeezenet-v1_0-quantized-0000.params --label-name='prob_label' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/val_256_q90.rec --ctx=cpu
