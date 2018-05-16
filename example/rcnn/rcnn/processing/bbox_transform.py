@@ -16,6 +16,8 @@
 # under the License.
 
 import numpy as np
+import pyximport
+pyximport.install()
 from ..cython.bbox import bbox_overlaps_cython
 
 

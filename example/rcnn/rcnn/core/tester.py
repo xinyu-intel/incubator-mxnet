@@ -45,6 +45,8 @@ class Predictor(object):
 
     def predict(self, data_batch):
         self._mod.forward(data_batch)
+        for output in self._mod.get_outputs():
+            output.wait_to_read()
         return dict(zip(self._mod.output_names, self._mod.get_outputs()))
 
 
