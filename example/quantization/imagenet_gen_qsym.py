@@ -160,14 +160,14 @@ if __name__ == '__main__':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('sc') != -1)
             excluded_sym_names += ['flatten0', 'fc1']
-	    if exclude_first_conv:
+	if exclude_first_conv:
             excluded_sym_names += ['conv0']
     elif args.model == 'imagenet1k-inception-bn':
         rgb_mean = '123.68,116.779,103.939'
         if args.ctx == 'gpu':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('fc') != -1)
-	    else:
+	else:
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
             excluded_sym_names += ['flatten', 'fc1']
         if exclude_first_conv:
