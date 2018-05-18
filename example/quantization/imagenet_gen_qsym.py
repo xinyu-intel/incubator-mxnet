@@ -62,7 +62,9 @@ if __name__ == '__main__':
                                                       'imagenet1k-vgg-16',
                                                       'imagenet1k-vgg-19',
                                                       'imagenet1k-squeezenet-v1_0',
-                                                      'imagenet1k-squeezenet-v1_1',])
+                                                      'imagenet1k-squeezenet-v1_1',
+                                                      'imagenet1k-mobilenet-v1',
+                                                      'imagenet1k-mobilenet-v2',])
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--label-name', type=str, default='softmax_label')
     parser.add_argument('--calib-dataset', type=str, default='data/val_256_q90.rec',
@@ -126,6 +128,13 @@ if __name__ == '__main__':
     if args.model == 'imagenet1k-inception-v3':
         prefix, epoch = "./model/Inception-7", 0
         sym, arg_params, aux_params = mx.model.load_checkpoint("./model/Inception-7", 0)
+    # MobileNet is a self-trained model
+    elif args.model == 'imagenet1k-mobilenet-v1':
+        prefix, epoch = "./model/mobilenet_v1", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/mobilenet_v1", 0)
+    elif args.model == 'imagenet1k-mobilenet-v2':
+        prefix, epoch = "./model/mobilenet_v2", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/mobilenet_v2", 0)
     else:
         prefix, epoch = download_model(model_name=args.model, logger=logger)
         sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
@@ -160,14 +169,14 @@ if __name__ == '__main__':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('sc') != -1)
             excluded_sym_names += ['flatten0', 'fc1']
-	if exclude_first_conv:
+        if exclude_first_conv:
             excluded_sym_names += ['conv0']
     elif args.model == 'imagenet1k-inception-bn':
         rgb_mean = '123.68,116.779,103.939'
         if args.ctx == 'gpu':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('fc') != -1)
-	else:
+        else:
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
             excluded_sym_names += ['flatten', 'fc1']
         if exclude_first_conv:
@@ -204,6 +213,14 @@ if __name__ == '__main__':
             excluded_sym_names += ['flatten']
         if exclude_first_conv:
             excluded_sym_names = ['conv1', 'relu_conv1']
+    elif args.model.find("mobilenet") != -1:
+        rgb_mean = '123.68,116.78,103.94'
+        calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
+                                                                 or name.find('fc') != -1)
+        if args.ctx == 'cpu':
+            excluded_sym_names += ['flatten']
+        if exclude_first_conv:
+            excluded_sym_names += ['conv1']
     else:
         raise ValueError('model %s is not supported in this script' % args.model)
 
