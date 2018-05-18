@@ -63,17 +63,17 @@ python imagenet_inference.py --symbol-file=./model/imagenet1k-vgg-16-quantized-5
 
 # Inception-V3 (self-trained)
 
-python imagenet_inference.py --symbol-file=./model/Inception-7-symbol.json --param-file=./model/Inception-7-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-symbol.json --param-file=./model/Inception-7-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
 
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=1 --dataset=./data/valset.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=1 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
 
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-5batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-10batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-5batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-10batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batches-naive-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
 
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-5batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-10batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
-python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/valset.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-5batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-10batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
+python imagenet_inference.py --symbol-file=./model/Inception-7-quantized-50batches-entropy-symbol.json --param-file=./model/Inception-7-quantized-0000.params --image-shape='3,299,299' --rgb-mean=0,0,0 --num-skipped-batches=50 --num-inference-batches=500 --dataset=./data/mydata_299_299_val.rec --ctx=cpu
 
 # Squeezenet 1.0,1.1
 

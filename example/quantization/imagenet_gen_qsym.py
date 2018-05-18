@@ -59,6 +59,7 @@ if __name__ == '__main__':
                                                       'imagenet1k-resnet-50',
                                                       'imagenet1k-inception-bn',
                                                       'imagenet1k-inception-v3',
+                                                      'imagenet1k-inception-v4',
                                                       'imagenet1k-vgg-16',
                                                       'imagenet1k-vgg-19',
                                                       'imagenet1k-squeezenet-v1_0',
@@ -126,6 +127,9 @@ if __name__ == '__main__':
     if args.model == 'imagenet1k-inception-v3':
         prefix, epoch = "./model/Inception-7", 0
         sym, arg_params, aux_params = mx.model.load_checkpoint("./model/Inception-7", 0)
+    if args.model == 'imagenet1k-inception-v4':
+        prefix, epoch = "./model/Inception-v4", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/Inception-v4", 0)
     else:
         prefix, epoch = download_model(model_name=args.model, logger=logger)
         sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
@@ -143,7 +147,7 @@ if __name__ == '__main__':
     data_nthreads = args.data_nthreads
 
     # get image shape
-    if args.model == 'imagenet1k-inception-v3':
+    if args.model == 'imagenet1k-inception-v3' or 'imagenet1k-inception-v4':
         image_shape = '3,299,299'
     else:
         image_shape = args.image_shape
@@ -192,6 +196,16 @@ if __name__ == '__main__':
             excluded_sym_names += ['flatten', 'fc1']
         if exclude_first_conv:
             excluded_sym_names += ['conv_conv2d']
+    elif args.model == 'imagenet1k-inception-v4':
+        rgb_mean = '0,0,0'
+        if args.ctx == 'gpu':
+            calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
+                                                                     or name.find('fc') != -1)
+        else:
+            calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
+            excluded_sym_names += ['flatten', 'fc1']
+        if exclude_first_conv:
+            excluded_sym_names += ['in_stem_conv1_3*3_conv2d']
     elif args.model.find("squeezenet") != -1:
         rgb_mean = '0,0,0'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
@@ -224,6 +238,13 @@ if __name__ == '__main__':
                                                        calib_mode=calib_mode, logger=logger)
         sym_name = '%s-symbol.json' % (prefix + '-quantized')
         save_symbol(sym_name, qsym, logger)
+
+        #graph = mx.viz.plot_network(sym)
+        #graph.format = 'png'
+        #graph.render('simple')
+        #graph1 = mx.viz.plot_network(qsym)
+	#graph1.format = 'png'
+	#graph1.render('quantized')
     else:
         logger.info('Creating ImageRecordIter for reading calibration dataset')
         data = mx.io.ImageRecordIter(path_imgrec=args.calib_dataset,

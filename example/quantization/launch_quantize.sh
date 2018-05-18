@@ -59,13 +59,13 @@ python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val
 
 python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-mode=none --ctx=cpu
 
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=5 --calib-mode=naive --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=10 --calib-mode=naive --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=50 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=5 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=10 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=50 --calib-mode=naive --ctx=cpu
 
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
-python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/valset.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
 
 # Squeezenet 1.0,1.1
 
