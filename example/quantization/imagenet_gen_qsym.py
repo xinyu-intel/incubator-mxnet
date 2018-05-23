@@ -57,6 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, choices=['imagenet1k-resnet-152',
                                                       'imagenet1k-resnet-101',
                                                       'imagenet1k-resnet-50',
+                                                      'imagenet1k-resnet-50-v1',
                                                       'imagenet1k-inception-bn',
                                                       'imagenet1k-inception-v3',
                                                       'imagenet1k-inception-v4',
@@ -132,6 +133,10 @@ if __name__ == '__main__':
     elif args.model == 'imagenet1k-inception-v4':
         prefix, epoch = "./model/Inception-v4", 0
         sym, arg_params, aux_params = mx.model.load_checkpoint("./model/Inception-v4", 0)
+    # ResNet-v1 is a self-trained model
+    elif args.model == 'imagenet1k-resnet-50-v1':
+        prefix, epoch = "./model/imagenet1k-resnet-50-v1", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-resnet-50-v1", 0)
     # MobileNet is a self-trained model
     elif args.model == 'imagenet1k-mobilenet-v1':
         prefix, epoch = "./model/mobilenet_v1", 0
@@ -258,10 +263,10 @@ if __name__ == '__main__':
 
         #graph = mx.viz.plot_network(sym)
         #graph.format = 'png'
-        #graph.render('simple')
+        #graph.render('simple-50')
         #graph1 = mx.viz.plot_network(qsym)
-	#graph1.format = 'png'
-	#graph1.render('quantized')
+        #graph1.format = 'png'
+        #graph1.render('quantized-50')
     else:
         logger.info('Creating ImageRecordIter for reading calibration dataset')
         data = mx.io.ImageRecordIter(path_imgrec=args.calib_dataset,
