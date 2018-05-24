@@ -31,6 +31,18 @@ python imagenet_gen_qsym.py --model=imagenet1k-resnet-152 --calib-dataset=./data
 python imagenet_gen_qsym.py --model=imagenet1k-resnet-152 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
 python imagenet_gen_qsym.py --model=imagenet1k-resnet-152 --calib-dataset=./data/val_256_q90.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
 
+# ResNet 50 v1 (self-trained)
+
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-mode=none --ctx=cpu
+
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=5 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=10 --calib-mode=naive --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=50 --calib-mode=naive --ctx=cpu
+
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=5 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
+python imagenet_gen_qsym.py --model=imagenet1k-resnet-50-v1 --calib-dataset=./data/mydata_299_299_val.rec --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
+
 # Inception-BN
 
 python imagenet_gen_qsym.py --model=imagenet1k-inception-bn --calib-mode=none --ctx=cpu
@@ -55,7 +67,7 @@ python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val
 python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=10 --calib-mode=entropy --ctx=cpu
 python imagenet_gen_qsym.py --model=imagenet1k-vgg-16 --calib-dataset=./data/val_256_q90.rec --label-name='prob_label' --num-calib-batches=50 --calib-mode=entropy --ctx=cpu
 
-# Inception-V3 (self-trained)
+# Inception-V3,V4 (self-trained)
 
 python imagenet_gen_qsym.py --model=imagenet1k-inception-v3 --calib-mode=none --ctx=cpu
 

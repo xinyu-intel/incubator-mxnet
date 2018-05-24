@@ -37,7 +37,6 @@ bool QuantizedPoolingShape(const nnvm::NodeAttrs& attrs,
   CHECK_EQ(in_shape->size(), 3U);
   if (shape_is_none(in_shape->at(0))) return false;
   const TShape &dshape = (*in_shape)[0];
-  //std::cout << "qpooling input " << dshape[0] << " " << dshape[1] << " " << dshape[2] << " " << dshape[3] << std::endl;
   CHECK_EQ(dshape.ndim(), 4U)
       << "quantized_pooling: Input data should be 4D in "
       << "(batch, channel, y, x)";
@@ -73,7 +72,6 @@ bool QuantizedPoolingShape(const nnvm::NodeAttrs& attrs,
   out_shape->push_back(oshape);
   out_shape->push_back(TShape{1});
   out_shape->push_back(TShape{1});
-  //std::cout << "qpooling output " << oshape[0] << " " << oshape[1] << " " << oshape[2] << " " << oshape[3] << std::endl;
   return true;
 }
 
