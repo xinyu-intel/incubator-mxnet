@@ -21,6 +21,7 @@ import logging
 from common import modelzoo
 import mxnet as mx
 from mxnet.contrib.quantization import *
+from mxboard import SummaryWriter
 
 
 def download_calib_dataset(dataset_url, calib_dataset, logger=None):
@@ -161,7 +162,7 @@ if __name__ == '__main__':
     data_nthreads = args.data_nthreads
 
     # get image shape
-    if args.model == 'imagenet1k-inception-v3' or 'imagenet1k-inception-v4':
+    if args.model == ('imagenet1k-inception-v3' or 'imagenet1k-inception-v4'):
         image_shape = '3,299,299'
     else:
         image_shape = args.image_shape
@@ -169,7 +170,7 @@ if __name__ == '__main__':
     exclude_first_conv = args.exclude_first_conv
     excluded_sym_names = []
     if args.model.find("resnet") != -1:
-        rgb_mean = '0,0,0'
+        rgb_mean = '123.68,116.779,103.939'
         if args.ctx == 'gpu':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('sc') != -1
@@ -201,7 +202,7 @@ if __name__ == '__main__':
         if exclude_first_conv:
             excluded_sym_names += ['conv1_1', 'relu1_1']
     elif args.model == 'imagenet1k-inception-v3':
-        rgb_mean = '0,0,0'
+        rgb_mean = '123.68,116.779,103.939'
         if args.ctx == 'gpu':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('fc') != -1)
@@ -211,7 +212,7 @@ if __name__ == '__main__':
         if exclude_first_conv:
             excluded_sym_names += ['conv_conv2d']
     elif args.model == 'imagenet1k-inception-v4':
-        rgb_mean = '0,0,0'
+        rgb_mean = '123.68,116.779,103.939'
         if args.ctx == 'gpu':
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                      or name.find('fc') != -1)
@@ -221,7 +222,7 @@ if __name__ == '__main__':
         if exclude_first_conv:
             excluded_sym_names += ['in_stem_conv1_3*3_conv2d']
     elif args.model.find("squeezenet") != -1:
-        rgb_mean = '0,0,0'
+        rgb_mean = '123.68,116.779,103.939'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
                                                                  or name.find('fire') != -1
                                                                  and name.find('relu') == -1
@@ -229,9 +230,9 @@ if __name__ == '__main__':
                                                                  and name.find('weight') == -1
                                                                  and name.find('bias') == -1)
         if args.ctx == 'cpu':
-            excluded_sym_names += ['flatten']
+            excluded_sym_names += ['conv10', 'relu_conv10', 'pool10', 'flatten']
         if exclude_first_conv:
-            excluded_sym_names = ['conv1', 'relu_conv1']
+            excluded_sym_names += ['conv1', 'relu_conv1', 'pool1']
     elif args.model.find("mobilenet") != -1:
         rgb_mean = '123.68,116.78,103.94'
         calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
@@ -261,6 +262,10 @@ if __name__ == '__main__':
         sym_name = '%s-symbol.json' % (prefix + '-quantized')
         save_symbol(sym_name, qsym, logger)
 
+        with SummaryWriter(logdir='./graph') as sw1:
+            sw1.add_graph(sym)
+        with SummaryWriter(logdir='./qgraph') as sw2:
+            sw2.add_graph(qsym)
         #graph = mx.viz.plot_network(sym)
         #graph.format = 'png'
         #graph.render('simple-50')
