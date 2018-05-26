@@ -95,6 +95,12 @@ if __name__ == '__main__':
     parser.add_argument('--quantized-dtype', type=str, default='int8', 
                         choices=['int8', 'uint8'],
                         help='quantization destination data type for input data')
+    parser.add_argument('--disable-requantize', type=bool, default=False, 
+                        help='If disable requantize, the OP needed requantize'
+                             ' will output int8 directly and hence requantize '
+                             'OP is not needed during quantization. Note: '
+                             'calibration mode need to be used if requantize '
+                             'is disabled.')
     args = parser.parse_args()
 
     if args.ctx == 'gpu':
@@ -103,6 +109,9 @@ if __name__ == '__main__':
         ctx = mx.cpu(0)
     else:
         raise ValueError('ctx %s is not supported in this script' % args.ctx)
+
+    if args.disable_requantize and args.calib_mode == 'none':
+        raise ValueError('disable-requantize need to run with calibration mode')
 
     logging.basicConfig()
     logger = logging.getLogger('logger')
@@ -178,6 +187,7 @@ if __name__ == '__main__':
         qsym, qarg_params, aux_params = quantize_model(sym=sym, arg_params=arg_params, aux_params=aux_params,
                                                        ctx=ctx, excluded_sym_names=excluded_sym_names,
                                                        calib_mode=calib_mode, quantized_dtype=args.quantized_dtype,
+                                                       disable_requantize=args.disable_requantize,
                                                        logger=logger)
         sym_name = '%s-symbol.json' % (prefix + '-quantized')
         save_symbol(sym_name, qsym, logger)
@@ -201,6 +211,7 @@ if __name__ == '__main__':
                                                         calib_mode=calib_mode, calib_data=data,
                                                         num_calib_examples=num_calib_batches * batch_size,
                                                         calib_layer=calib_layer, quantized_dtype=args.quantized_dtype,
+                                                        disable_requantize=args.disable_requantize,
                                                         logger=logger)
         if calib_mode == 'entropy':
             suffix = '-quantized-%dbatches-entropy' % num_calib_batches

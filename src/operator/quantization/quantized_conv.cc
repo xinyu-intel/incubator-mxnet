@@ -102,7 +102,14 @@ bool QuantizedConvType(const nnvm::NodeAttrs& attrs,
     TYPE_ASSIGN_CHECK(*in_type, i, mshadow::kFloat32);
   }
 
-  TYPE_ASSIGN_CHECK(*out_type, 0, mshadow::kInt32);
+  if (param.out_type.value() == mshadow::kInt32) {
+    TYPE_ASSIGN_CHECK(*out_type, 0, mshadow::kInt32);
+  } else if (param.out_type.value() == mshadow::kInt8) {
+    TYPE_ASSIGN_CHECK(*out_type, 0, mshadow::kInt8);
+  } else {
+    throw dmlc::ParamError("Quantized Conv out_type(" +
+                           std::to_string(param.out_type.value()) + ") error");
+  }
   TYPE_ASSIGN_CHECK(*out_type, 1, mshadow::kFloat32);
   TYPE_ASSIGN_CHECK(*out_type, 2, mshadow::kFloat32);
   return true;

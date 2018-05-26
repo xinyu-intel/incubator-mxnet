@@ -67,6 +67,10 @@ struct ConvolutionParam : public dmlc::Parameter<ConvolutionParam> {
   dmlc::optional<int> cudnn_tune;
   bool cudnn_off;
   dmlc::optional<int> layout;
+  // below 3 params are optional parameters to support INT8 quantization
+  dmlc::optional<int> out_type;  // quantized conv output type
+  dmlc::optional<float> min_calib_range;  // min float value calculated from calibration dataset
+  dmlc::optional<float> max_calib_range;  // max float value calculated from calibration dataset
   DMLC_DECLARE_PARAMETER(ConvolutionParam) {
     DMLC_DECLARE_FIELD(kernel).describe("Convolution kernel size: (w,), (h, w) or (d, h, w)");
     DMLC_DECLARE_FIELD(stride).set_default(TShape())
@@ -104,6 +108,21 @@ struct ConvolutionParam : public dmlc::Parameter<ConvolutionParam> {
     .set_default(dmlc::optional<int>())
     .describe("Set layout for input, output and weight. Empty for\n    "
               "default layout: NCW for 1d, NCHW for 2d and NCDHW for 3d.");
+    DMLC_DECLARE_FIELD(out_type)
+    .add_enum("int8", mshadow::kInt8)
+    .add_enum("int32", mshadow::kInt32)
+    .set_default(dmlc::optional<int>())
+    .describe("Output data type.");
+    DMLC_DECLARE_FIELD(min_calib_range)
+    .set_default(dmlc::optional<float>())
+    .describe("The minimum scalar value in the form of float32 obtained "
+              "through calibration. If present, it will be used to by "
+              "quantized convolution op to calculate primitive scale");
+    DMLC_DECLARE_FIELD(max_calib_range)
+    .set_default(dmlc::optional<float>())
+    .describe("The maximum scalar value in the form of float32 obtained "
+              "through calibration. If present, it will be used to by "
+              "quantized convolution op to calculate primitive scale");
   }
   // Adjusts kernel size for effects of dilation in the dimension `dim`.
   index_t DilatedKernelSize(int dim) const {
