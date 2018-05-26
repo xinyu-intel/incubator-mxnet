@@ -185,7 +185,6 @@ Graph QuantizeGraph(Graph &&src) {
           // Set quantized OP's out type to int8 if disable requantize
           new_node->attrs.dict["out_type"] = "int8";
         } else {
-          new_node->attrs.dict["out_type"] = "int32";
           NodePtr requantize_node = Node::Create();
           requantize_node->attrs.op = Op::Get("_contrib_requantize");
           requantize_node->attrs.name = "requantize_" + node->attrs.name;

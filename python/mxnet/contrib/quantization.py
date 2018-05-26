@@ -173,7 +173,7 @@ class _LayerOutputMinMaxCollector(object):
                              % (name, min_range, max_range))
 
 
-def _calibrate_quantized_sym(qsym, th_dict, disable_requantize):
+def _calibrate_quantized_sym(qsym, th_dict, disable_requantize=False):
     """Given a dictionary containing the thresholds for quantizing the layers,
     set the thresholds into the quantized symbol as the params of requantize operators.
     """
