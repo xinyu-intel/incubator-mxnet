@@ -83,7 +83,7 @@ TEST(MKLDNN_UTIL_FUNC, AlignMem) {
 
 TEST(MKLDNN_UTIL_FUNC, MemFormat) {
   // Check whether the number of format is correct.
-  CHECK_EQ(mkldnn_format_last, 67);
+  CHECK_EQ(mkldnn_format_last, 70);
   CHECK_EQ(mkldnn_nchw, 5);
   CHECK_EQ(mkldnn_oihw, 15);
 }

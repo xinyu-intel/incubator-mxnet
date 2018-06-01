@@ -120,6 +120,14 @@ if __name__ == '__main__':
                         help='shuffling seed, see'
                              ' https://mxnet.incubator.apache.org/api/python/io/io.html?highlight=imager#mxnet.io.ImageRecordIter'
                              ' for more details')
+    parser.add_argument('--scale', type=float, default=1,
+                        help='scale ration, see'
+                             ' https://mxnet.incubator.apache.org/api/python/io/io.html?highlight=imager#mxnet.io.ImageRecordIter'
+                             ' for more details')
+    parser.add_argument('--resize', type=int, default=-1,
+                        help='reshape, see'
+                             ' https://mxnet.incubator.apache.org/api/python/io/io.html?highlight=imager#mxnet.io.ImageRecordIter'
+                             ' for more details')
 
     args = parser.parse_args()
 
@@ -137,6 +145,8 @@ if __name__ == '__main__':
     symbol_file = args.symbol_file
     param_file = args.param_file
     data_nthreads = args.data_nthreads
+    scale = args.scale
+    resize = args.resize
 
     batch_size = args.batch_size
     logger.info('batch size = %d for inference' % batch_size)
@@ -166,6 +176,8 @@ if __name__ == '__main__':
                                  label_name=label_name,
                                  rand_crop=False,
                                  rand_mirror=False,
+                                 resize=resize,
+                                 scale=scale,
                                  shuffle=True,
                                  shuffle_chunk_seed=3982304,
                                  seed=48564309,
@@ -173,6 +185,7 @@ if __name__ == '__main__':
 
     # loading model
     sym, arg_params, aux_params = load_model(symbol_file, param_file, logger)
+    # sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-mobilenet-v1", 0)
 
     # make sure that fp32 inference works on the same images as calibrated quantized model
     logger.info('Skipping the first %d batches' % args.num_skipped_batches)

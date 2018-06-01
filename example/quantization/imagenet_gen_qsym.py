@@ -140,11 +140,11 @@ if __name__ == '__main__':
         sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-resnet-50-v1", 0)
     # MobileNet is a self-trained model
     elif args.model == 'imagenet1k-mobilenet-v1':
-        prefix, epoch = "./model/mobilenet_v1", 0
-        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/mobilenet_v1", 0)
+        prefix, epoch = "./model/imagenet1k-mobilenet-v1", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-mobilenet-v1", 0)
     elif args.model == 'imagenet1k-mobilenet-v2':
-        prefix, epoch = "./model/mobilenet_v2", 0
-        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/mobilenet_v2", 0)
+        prefix, epoch = "./model/imagenet1k-mobilenet-v2", 0
+        sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-mobilenet-v2", 0)
     else:
         prefix, epoch = download_model(model_name=args.model, logger=logger)
         sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
