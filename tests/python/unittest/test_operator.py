@@ -28,17 +28,17 @@ from mxnet.base import py_str, MXNetError
 from common import setup_module, with_seed
 import unittest
 
-def check_rnn_consistency(cell1, cell2, T, N, I, H):
+def check_rnn_consistency(cell1, cell2, T, N, I, H, grad_req):
     dshape = (N, T, I)
     data = mx.sym.Variable('data')
 
     Y1, _ = cell1.unroll(T, data, layout='NTC', merge_outputs=True)
     mod1 = mx.mod.Module(Y1, label_names=None, context=default_context())
-    mod1.bind(data_shapes=[('data', dshape)], label_shapes=None, inputs_need_grad=True)
+    mod1.bind(data_shapes=[('data', dshape)], label_shapes=None, inputs_need_grad=True, grad_req=grad_req)
 
     Y2, _ = cell2.unroll(T, data, layout='NTC', merge_outputs=True)
     mod2 = mx.mod.Module(Y2, label_names=None, context=default_context())
-    mod2.bind(data_shapes=[('data', dshape)], label_shapes=None, inputs_need_grad=True)
+    mod2.bind(data_shapes=[('data', dshape)], label_shapes=None, inputs_need_grad=True, grad_req=grad_req)
 
     mod1.init_params()
     args, auxs = mod1.get_params()
@@ -60,8 +60,14 @@ def check_rnn_consistency(cell1, cell2, T, N, I, H):
 
     dy = mx.random.uniform(shape=mod1.get_outputs()[0].shape)
     mod1.backward(out_grads=[dy])
-    mod2.backward(out_grads=[dy])
-    assert_allclose(mod1.get_input_grads()[0].asnumpy(), mod2.get_input_grads()[0].asnumpy(), rtol=1e-2, atol=1e-4)
+    mod2.backward(out_grads=[dy])    
+    if grad_req != 'null':
+        assert_allclose(mod1.get_input_grads()[0].asnumpy(), mod2.get_input_grads()[0].asnumpy(), rtol=1e-2, atol=1e-4)
+    else:
+        assert(mod1.get_input_grads()[0] == None)
+        assert(mod2.get_input_grads()[0] == None)
+        
+        
 
 @with_seed()
 def test_lstm_sym():
@@ -71,8 +77,10 @@ def test_lstm_sym():
     stack.add(mx.rnn.LSTMCell(H, prefix='l0_'))
     stack.add(mx.rnn.LSTMCell(H, prefix='l1_'))
     stack.add(mx.rnn.LSTMCell(H, prefix='l2_'))
-    check_rnn_consistency(fused, stack, T, N, I, H)
-    check_rnn_consistency(stack, fused, T, N, I, H)
+    
+    check_rnn_consistency(fused, stack, T, N, I, H, 'write')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'add')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'null')
 
 @with_seed()
 def test_lstm_bidirectional():
@@ -90,8 +98,45 @@ def test_lstm_bidirectional():
                 mx.rnn.LSTMCell(H, prefix='r1_'),
                 output_prefix='bi_lstm_1_'))
 
-    check_rnn_consistency(stack, fused, T, N, I, H)
-    check_rnn_consistency(fused, stack, T, N, I, H)
+    check_rnn_consistency(fused, stack, T, N, I, H, 'write')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'add')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'null')
+
+@with_seed()
+def test_gru_sym():
+    T, N, I, H = 5, 32, 800, 800
+    fused = mx.rnn.FusedRNNCell(H, num_layers=3, mode='gru', get_next_state=True, prefix='')
+    stack = mx.rnn.SequentialRNNCell()
+    stack.add(mx.rnn.GRUCell(H, prefix='l0_'))
+    stack.add(mx.rnn.GRUCell(H, prefix='l1_'))
+    stack.add(mx.rnn.GRUCell(H, prefix='l2_'))
+
+    check_rnn_consistency(fused, stack, T, N, I, H, 'write')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'add')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'null')
+
+@with_seed()
+def test_gru_bidirectional():
+    T, N, I, H = 5, 20, 800, 800
+    
+    fused = mx.rnn.FusedRNNCell(H, num_layers=2, mode='gru',
+                                bidirectional=True, get_next_state=True, prefix='')
+    
+    stack = mx.rnn.SequentialRNNCell()
+    stack.add(mx.rnn.BidirectionalCell(
+                mx.rnn.GRUCell(H, prefix='l0_'),
+                mx.rnn.GRUCell(H, prefix='r0_'),
+                output_prefix='bi_gru_0_'))    
+    
+    stack.add(mx.rnn.BidirectionalCell(
+                mx.rnn.GRUCell(H, prefix='l1_'),
+                mx.rnn.GRUCell(H, prefix='r1_'),
+                output_prefix='bi_gru_1_'))
+    
+    check_rnn_consistency(fused, stack, T, N, I, H, 'write')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'add')
+    check_rnn_consistency(fused, stack, T, N, I, H, 'null')
+
 
 # Currently, fused LSTM operator doesn't support dropout.
 # Will change this test after dropout is supported
@@ -4688,7 +4733,24 @@ def test_laop():
     check_fw(test_gemm, [a, b, c], [r])
     if grad_check == 1:
         check_grad(test_gemm, [a, b, c])
-
+    # Check for different axis that describes matrix rows.
+    a2 = np.copy(np.swapaxes(a, 0, 2))
+    b2 = np.copy(np.swapaxes(b, 0, 2))
+    c2 = np.copy(np.swapaxes(c, 0, 2))
+    r2 = np.copy(np.swapaxes(r, 0, 2))
+    test_gemm = mx.sym.linalg.gemm(data1, data2, data3, alpha=4., beta=7., axis = 0)
+    check_fw(test_gemm, [a2, b2, c2], [r2])
+    if grad_check == 1:
+        check_grad(test_gemm, [a2, b2, c2])
+    a2 = np.copy(np.swapaxes(a, 1, 2))
+    b2 = np.copy(np.swapaxes(b, 1, 2))
+    c2 = np.copy(np.swapaxes(c, 1, 2))
+    r2 = np.copy(np.swapaxes(r, 1, 2))
+    test_gemm = mx.sym.linalg.gemm(data1, data2, data3, alpha=4., beta=7., axis = -3)
+    check_fw(test_gemm, [a2, b2, c2], [r2])
+    if grad_check == 1:
+        check_grad(test_gemm, [a2, b2, c2])
+    
     # Check gemm2 operator same way as gemm.
     res_gemm = 4. * np.dot(data_in1, data_in2)
     test_gemm = mx.sym.linalg.gemm2(data1, data2, alpha=4.)
@@ -4720,6 +4782,20 @@ def test_laop():
     check_fw(test_gemm, [a, b], [r])
     if grad_check == 1:
         check_grad(test_gemm, [a, b])
+    a2 = np.copy(np.swapaxes(a, 0, 2))
+    b2 = np.copy(np.swapaxes(b, 0, 2))
+    r2 = np.copy(np.swapaxes(r, 0, 2))
+    test_gemm = mx.sym.linalg.gemm2(data1, data2, alpha=4., axis = 0)
+    check_fw(test_gemm, [a2, b2], [r2])
+    if grad_check == 1:
+        check_grad(test_gemm, [a2, b2])
+    a2 = np.copy(np.swapaxes(a, 1, 2))
+    b2 = np.copy(np.swapaxes(b, 1, 2))
+    r2 = np.copy(np.swapaxes(r, 1, 2))
+    test_gemm = mx.sym.linalg.gemm2(data1, data2, alpha=4., axis = -3)
+    check_fw(test_gemm, [a2, b2], [r2])
+    if grad_check == 1:
+        check_grad(test_gemm, [a2, b2])
 
     # Now test all the other operators.
 
@@ -5787,7 +5863,7 @@ def test_multi_proposal_op():
     rpn_min_size = 16
 
     batch_size = 20
-    feat_len = 14
+    feat_len = (1000 + 15) // 16
     H, W = feat_len, feat_len
     num_anchors = len(scales) * len(ratios)
     count_anchors = H * W * num_anchors
@@ -5821,7 +5897,7 @@ def test_multi_proposal_op():
         single_score = []
         for i in range(batch_size):
             rois, score = mx.nd.contrib.Proposal(
-                    cls_score = get_sub(cls_prob, i),
+                    cls_prob = get_sub(cls_prob, i),
                     bbox_pred = get_sub(bbox_pred, i),
                     im_info = get_sub(im_info, i),
                     feature_stride = feature_stride,
@@ -5835,7 +5911,7 @@ def test_multi_proposal_op():
             single_score.append(score)
 
         multi_proposal, multi_score = mx.nd.contrib.MultiProposal(
-                cls_score = cls_prob,
+                cls_prob = cls_prob,
                 bbox_pred = bbox_pred,
                 im_info = im_info,
                 feature_stride = feature_stride,
@@ -6007,6 +6083,21 @@ def test_activation():
         finite_diff_unary_op(
             name, op[0], shape, op[3], op[4], rtol_fd, atol_fd, num_eps)
 
+@with_seed()
+def test_ravel():
+    # be aware that check_symbolic_forward will use float type internally
+    # for the arrays and that limits the representable flat index range.
+    # Taking dim==4 and a range of [0,..,100] for the data can already
+    # cause precision issues and break this test.
+    for dim in [1, 2, 3, 4]:
+      data = np.random.randint(50, size=(dim, 500))
+      shape = tuple(np.add(np.amax(data, axis=1), [1]))
+      a = mx.sym.Variable('a')
+      ravel_npy = np.ravel_multi_index(data, shape)
+      b = mx.sym.ravel_multi_index(a, shape=shape)
+      check_symbolic_forward(b, location={'a': data}, expected=[ravel_npy])
+      c = mx.sym.unravel_index(a, shape=shape)
+      check_symbolic_forward(c, location={'a': ravel_npy}, expected=[data])
 
 def test_context_num_gpus():
     try:
