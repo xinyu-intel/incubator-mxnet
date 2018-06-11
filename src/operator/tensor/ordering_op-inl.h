@@ -35,6 +35,7 @@
 #include "../elemwise_op_common.h"
 #include "./sort_op.h"
 #include "./indexing_op.h"
+//#include "time.h"
 
 namespace mshadow {
 template<typename xpu, int src_dim, typename DType, int dst_dim>
@@ -344,6 +345,7 @@ void TopKImpl(RunContext ctx,
     CHECK_EQ(ret_ele.type_flag_, src.type_flag_);
   }
   // 1. Parse and initialize information
+  //Stream<gpu> *g;
   Stream<xpu> *s = ctx.get_stream<xpu>();
   Tensor<xpu, 1, char> workspace;
   Tensor<xpu, 1, char> temp_workspace;
@@ -356,6 +358,8 @@ void TopKImpl(RunContext ctx,
   bool is_ascend = false;
   int k = 0;
   TShape target_shape;
+  //clock_t start, finish;
+  //double duration;
   ParseTopKParam(src.shape_, param,
                  &target_shape, &batch_size, &element_num, &axis, &k, &do_transpose, &is_ascend);
   Tensor<xpu, 3, real_t> dat = src.FlatTo3D<xpu, real_t>(axis, axis, s);
@@ -383,8 +387,13 @@ void TopKImpl(RunContext ctx,
   if (do_transpose) {
     sorted_dat = reshape(transpose(dat, Shape3(0, 2, 1)), Shape1(src.Size()));
   } else {
+    //start = clock();
     //sorted_dat = reshape(dat, Shape1(src.Size()));
-    sorted_dat = src.FlatTo1D<xpu, real_t>(s);
+    //sorted_dat = src.FlatTo1D<xpu, real_t>(s);
+    sorted_dat = reshape(src.FlatTo1D<xpu, real_t>(s), Shape1(src.Size()));
+    //finish = clock();
+    //duration = (double)(finish - start) / CLOCKS_PER_SEC;
+    //printf( "%f seconds/n", duration );
   }
   mxnet_op::Kernel<range_fwd, xpu>::Launch(s, batch_size * element_num, 1, 0, 1,
     kWriteTo, indices.dptr_);
