@@ -101,6 +101,7 @@ Graph QuantizeGraph(Graph &&src) {
   auto excluded_nodes = src.GetAttr<std::unordered_set<NodePtr>>("excluded_nodes");
   auto quantized_dtype = src.GetAttr<std::string>("quantized_dtype");
   auto disable_requantize = src.GetAttr<bool>("disable_requantize");
+  auto input_calib_layers = src.GetAttr<std::unordered_set<std::string>>("input_calib_layers");
 
   // mirror_map stores the mapping from the currently visited graph to the newly created quantized
   // graph. Key is the currently visited graph's node pointer, and value is a copied node of the key
@@ -134,13 +135,24 @@ Graph QuantizeGraph(Graph &&src) {
           quantize_node->attrs.dict["out_type"] = quantized_dtype;
           quantize_node->op()->attr_parser(&(quantize_node->attrs));
 
-          NodePtr min_node = InsertNode("min",
-              e.node->attrs.name + "_min", quantize_node, mirror_entry);
-          min_node->op()->attr_parser(&(min_node->attrs));
+          // If node's input needs offline, and if node's input is an OP which
+          // doesn't need quantize, then add _min/_max variables to the quantize
+          // node which connects between node's input and node which means
+          // the _min/_max will be calculated offline and save into parameter file
+          if (input_calib_layers.count(node->attrs.name) && mirror_node->op()) {
+            NodePtr min_var = CreateNode("nullptr", e.node->attrs.name + "_min");
+            quantize_node->inputs.emplace_back(NodeEntry{min_var, 0, 0});
+            NodePtr max_var = CreateNode("nullptr", e.node->attrs.name + "_max");
+            quantize_node->inputs.emplace_back(NodeEntry{max_var, 0, 0});
+          } else {
+            NodePtr min_node = InsertNode("min",
+                e.node->attrs.name + "_min", quantize_node, mirror_entry);
+            min_node->op()->attr_parser(&(min_node->attrs));
 
-          NodePtr max_node = InsertNode("max",
-              e.node->attrs.name + "_max", quantize_node, mirror_entry);
-          max_node->op()->attr_parser(&(max_node->attrs));
+            NodePtr max_node = InsertNode("max",
+                e.node->attrs.name + "_max", quantize_node, mirror_entry);
+            max_node->op()->attr_parser(&(max_node->attrs));
+          }
 
           mirror_map[e.node.get()] = std::move(quantize_node);
         } else {

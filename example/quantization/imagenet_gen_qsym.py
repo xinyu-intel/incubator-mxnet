@@ -92,15 +92,20 @@ if __name__ == '__main__':
                              ' thresholds. This mode is expected to produce the best inference accuracy of all three'
                              ' kinds of quantized models if the calibration dataset is representative enough of the'
                              ' inference dataset.')
-    parser.add_argument('--quantized-dtype', type=str, default='int8', 
+    parser.add_argument('--quantized-dtype', type=str, default='int8',
                         choices=['int8', 'uint8'],
                         help='quantization destination data type for input data')
-    parser.add_argument('--disable-requantize', type=bool, default=False, 
+    parser.add_argument('--disable-requantize', type=bool, default=False,
                         help='If disable requantize, the OP needed requantize'
                              ' will output int8 directly and hence requantize '
                              'OP is not needed during quantization. Note: '
                              'calibration mode need to be used if requantize '
                              'is disabled.')
+    parser.add_argument('--enable-input-calib', type=bool, default=False,
+                        help='If enabled, the input data of calib layer will '
+                             'be calibrated offline if calibration mode is '
+                             'enabled')
+
     args = parser.parse_args()
 
     if args.ctx == 'gpu':
@@ -110,8 +115,17 @@ if __name__ == '__main__':
     else:
         raise ValueError('ctx %s is not supported in this script' % args.ctx)
 
+    if args.disable_requantize and args.ctx == 'gpu':
+        raise ValueError('disable-requantize option currently not support by GPU')
+
     if args.disable_requantize and args.calib_mode == 'none':
         raise ValueError('disable-requantize need to run with calibration mode')
+
+    if args.enable_input_calib and args.ctx == 'gpu':
+        raise ValueError('enable-input-calib option currently not support by GPU')
+
+    if args.enable_input_calib and args.calib_mode == 'none':
+        raise ValueError('enable-input-calib need to run with calibration mode')
 
     logging.basicConfig()
     logger = logging.getLogger('logger')
@@ -147,6 +161,7 @@ if __name__ == '__main__':
 
     exclude_first_conv = args.exclude_first_conv
     excluded_sym_names = []
+    input_calib_layer = None
     if args.model == 'imagenet1k-resnet-152':
         rgb_mean = '0,0,0'
         if args.ctx == 'gpu':
@@ -154,8 +169,13 @@ if __name__ == '__main__':
                                                                      or name.find('sc') != -1
                                                                      or name.find('fc') != -1)
         else:
-            calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1
-                                                                     or name.find('sc') != -1)
+            calib_layer = lambda name: (name.endswith('_output') \
+                                      and (name.find('conv') != -1 or name.find('sc') != -1))
+            if args.enable_input_calib:
+                input_calib_layer = lambda name: (name.endswith('_data') and
+                                                  (name.find('conv') != -1 or
+                                                   name.find('sc') != -1 or
+                                                   name.find('pool') != -1))
             excluded_sym_names += ['flatten0', 'fc1']
         if exclude_first_conv:
             excluded_sym_names += ['conv0']
@@ -166,6 +186,10 @@ if __name__ == '__main__':
                                                                      or name.find('fc') != -1)
         else:
             calib_layer = lambda name: name.endswith('_output') and (name.find('conv') != -1)
+            if args.enable_input_calib:
+                input_calib_layer = lambda name: (name.endswith('_data') and
+                                                  (name.find('conv') != -1 or
+                                                   name.find('pool') != -1))
             excluded_sym_names += ['flatten', 'fc1']
         if exclude_first_conv:
             excluded_sym_names += ['conv_1']
@@ -212,6 +236,7 @@ if __name__ == '__main__':
                                                         num_calib_examples=num_calib_batches * batch_size,
                                                         calib_layer=calib_layer, quantized_dtype=args.quantized_dtype,
                                                         disable_requantize=args.disable_requantize,
+                                                        input_calib_layer=input_calib_layer,
                                                         logger=logger)
         if calib_mode == 'entropy':
             suffix = '-quantized-%dbatches-entropy' % num_calib_batches

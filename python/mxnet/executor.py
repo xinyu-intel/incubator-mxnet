@@ -78,6 +78,7 @@ class Executor(object):
         self._aux_dict = None
         self._output_dict = None
         self._monitor_callback = None
+        self._input_monitor_callback = None
         self._ctx = copy.deepcopy(ctx)
         self._grad_req = copy.deepcopy(grad_req)
         self._group2ctx = copy.deepcopy(group2ctx)
@@ -232,6 +233,28 @@ class Executor(object):
             mx_uint(len(out_grads)),
             ndarray,
             ctypes.c_int(is_train)))
+
+    def set_input_monitor_callback(self, callback):
+        """Install callback for input monitor.
+
+        Parameters
+        ----------
+        callback : function
+            Takes a string and an NDArrayHandle.
+
+        Examples
+        --------
+        >>> def mon_callback(*args, **kwargs):
+        >>>     print("Do your stuff here.")
+        >>>
+        >>> texe.set_input_monitor_callback(mon_callback)
+        """
+        cb_type = ctypes.CFUNCTYPE(None, ctypes.c_char_p, NDArrayHandle, ctypes.c_void_p)
+        self._input_monitor_callback = cb_type(_monitor_callback_wrapper(callback))
+        check_call(_LIB.MXExecutorSetInputMonitorCallback(
+            self.handle,
+            self._input_monitor_callback,
+            None))
 
     def set_monitor_callback(self, callback):
         """Install callback for monitor.

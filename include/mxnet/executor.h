@@ -150,6 +150,10 @@ class Executor {
   /*!
    * \brief Install a callback to notify the completion of operation.
    */
+  virtual void SetInputMonitorCallback(const MonitorCallback& callback) {}
+  /*!
+   * \brief Install a callback to notify the completion of operation.
+   */
   virtual void SetMonitorCallback(const MonitorCallback& callback) {}
 };  // class executor
 }  // namespace mxnet

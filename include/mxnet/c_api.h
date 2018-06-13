@@ -1438,6 +1438,8 @@ MXNET_DLL int MXSymbolInferType(SymbolHandle sym,
  * \param offline_params array of c strings representing the names of params quantized offline
  * \param quantized_dtype the quantized destination type for input data.
  * \param disable_requantize whether disable requantize OP during quantization
+ * \param num_input_calib number of layers that are doing input calibration
+ * \param input_calib array of c strings representing the names of layers doing input calibration
  */
 MXNET_DLL int MXQuantizeSymbol(SymbolHandle sym_handle,
                                SymbolHandle *ret_sym_handle,
@@ -1446,7 +1448,9 @@ MXNET_DLL int MXQuantizeSymbol(SymbolHandle sym_handle,
                                const mx_uint num_offline,
                                const char **offline_params,
                                const char *quantized_dtype,
-                               const bool disable_requantize);
+                               const bool disable_requantize,
+                               const mx_uint num_input_calib,
+                               const char **input_calib);
 
 /*!
  * \brief Set calibration table to node attributes in the sym
@@ -1660,6 +1664,12 @@ MXNET_DLL int MXExecutorSimpleBind(SymbolHandle symbol_handle,
                                    NDArrayHandle** aux_states,
                                    ExecutorHandle shared_exec_handle,
                                    ExecutorHandle* out);
+/*!
+ * \brief set a call back to notify the completion of operation
+ */
+MXNET_DLL int MXExecutorSetInputMonitorCallback(ExecutorHandle handle,
+                                                ExecutorMonitorCallback callback,
+                                                void* callback_handle);
 /*!
  * \brief set a call back to notify the completion of operation
  */
