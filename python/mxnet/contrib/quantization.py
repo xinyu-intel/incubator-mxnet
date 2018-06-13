@@ -204,7 +204,6 @@ class _LayerStatsMinMaxCollector(object):
             # parameter file
             input_calib_prev_name = name.split('-')[1]
             input_calib_name = name.split('-')[0] + '_data'
-        if input_calib_name is not None:
         if not (self.include_layer is not None and self.include_layer(name)) and \
            not (self.input_calib_layer is not None and input_calib_name is not None
                    and self.input_calib_layer(input_calib_name)):
@@ -228,6 +227,7 @@ class _LayerStatsMinMaxCollector(object):
                                            max(cur_min_max[1], max_range))
             else:
                 self.min_max_in_dict[input_calib_prev_name] = (min_range, max_range)
+            name = input_calib_name
         if self.logger is not None:
             self.logger.info("Collecting layer %s stats min_range=%f, max_range=%f"
                              % (name, min_range, max_range))
