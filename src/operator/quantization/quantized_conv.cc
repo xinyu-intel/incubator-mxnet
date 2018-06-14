@@ -36,31 +36,21 @@ bool QuantizedConvShape(const nnvm::NodeAttrs& attrs,
                         std::vector<TShape>* out_shape) {
   using namespace mshadow;
   const ConvolutionParam& param = nnvm::get<ConvolutionParam>(attrs.parsed);
-  CHECK_EQ(param.num_group, 1U) << "quantized_conv only supports num_group=1 for now";
   CHECK_EQ(in_shape->size(), param.no_bias? 6U : 9U);
   CHECK_EQ(out_shape->size(), 3U);
   if (param.layout.has_value()) {
     CHECK_EQ(param.layout.value(), mshadow::kNCHW) << "quantized_conv only supports NCHW for now";
   }
   CHECK_EQ(param.kernel.ndim(), 2U) << "quantized_conv only supports 2D convolution for now";
-  CHECK(param.dilate.ndim() == 0U || param.dilate.Size() == 1U)
-    << "quantized_conv only supports dilation=1 for all dimensions";
-  const TShape& dshape =  in_shape->at(0);
-  CHECK_EQ(dshape.ndim(), 4U);
-  if (dshape.ndim() == 0U) return false;
+  const TShape &dshp = (*in_shape)[conv::kData];
+  CHECK_EQ(dshp.ndim(), 4U);
+  if (dshp.ndim() == 0U) return false;
 
-  const int N = 0, H = 2, W = 3, C = 1;
-  CHECK_EQ(dshape[C] % 4,  0U)
+  CHECK_EQ(dshp[1] % 4,  0U)
     << "for 8bit cudnn conv, the number of channel must be multiple of 4";
   CHECK_EQ(param.num_filter % 4, 0U)
     << "for 8bit cudnn conv, the number of channel must be multiple of 4";
 
-  TShape wshape{0, 0, 0, 0};
-  wshape[N] = param.num_filter;
-  wshape[H] = param.kernel[0];
-  wshape[W] = param.kernel[1];
-  wshape[C] = dshape[C];
-  SHAPE_ASSIGN_CHECK(*in_shape, 1, wshape);
   const int start = param.no_bias? 2 : 3;
   const int end = param.no_bias? 6 : 9;
   for (int i = start; i < end; ++i) {
@@ -71,15 +61,58 @@ bool QuantizedConvShape(const nnvm::NodeAttrs& attrs,
   }
 
   auto AddPad = [](index_t dsize, index_t pad) { return dsize + 2 * pad; };
-  TShape oshape{1, 1, 1, 1};
-  oshape[N] = dshape[N];
-  oshape[C] = wshape[N];
-  oshape[H] = (AddPad(dshape[H], param.pad[0]) - wshape[H]) / param.stride[0] + 1;
-  oshape[W] = (AddPad(dshape[W], param.pad[1]) - wshape[W]) / param.stride[1] + 1;
 
-  SHAPE_ASSIGN_CHECK(*out_shape, 0, oshape);
-  SHAPE_ASSIGN_CHECK(*out_shape, 1, TShape({1}));
-  SHAPE_ASSIGN_CHECK(*out_shape, 2, TShape({1}));
+  Shape<4> dshape = ConvertLayout(dshp.get<4>(), param.layout.value(), kNCHW);
+  Shape<4> wshape = Shape4(param.num_filter / param.num_group,
+      dshape[1] / param.num_group,
+      param.kernel[0], param.kernel[1]);
+  wshape = ConvertLayout(wshape, kNCHW, param.layout.value());
+  wshape[0] *= param.num_group;
+  SHAPE_ASSIGN_CHECK(*in_shape, conv::kWeight, wshape);
+  if (!param.no_bias) {
+    SHAPE_ASSIGN_CHECK(*in_shape, conv::kBias, Shape1(param.num_filter));
+  }
+
+  const index_t dilated_ksize_y = param.DilatedKernelSize(0);
+  const index_t dilated_ksize_x = param.DilatedKernelSize(1);
+  CHECK_EQ(dshape[1] % param.num_group, 0U) \
+    << "input num_filter must divide group size";
+  CHECK_EQ(param.num_filter % param.num_group, 0U) \
+    << "output num_filter must divide group size";
+  CHECK_GT(param.kernel.Size(), 0U) \
+    << "incorrect kernel size: " << param.kernel;
+  CHECK_GT(param.stride.Size(), 0U) \
+    << "incorrect stride size: " << param.stride;
+  CHECK_GT(param.dilate.Size(), 0U) \
+    << "incorrect dilate size: " << param.dilate;
+  Shape<4> oshape;
+  oshape[0] = dshape[0];
+  oshape[1] = param.num_filter;
+  oshape[2] = dshape[2] ?
+    (AddPad(dshape[2], param.pad[0]) - dilated_ksize_y) / param.stride[0] + 1 : 0;
+  oshape[3] = dshape[3] ?
+    (AddPad(dshape[3], param.pad[1]) - dilated_ksize_x) / param.stride[1] + 1 : 0;
+  SHAPE_ASSIGN_CHECK(*out_shape, 0, ConvertLayout(oshape, kNCHW, param.layout.value()));
+  // Perform incomplete shape inference. Fill in the missing values in data shape.
+  // 1) We can always fill in the batch_size.
+  // 2) We can back-calculate the input height/width if the corresponding stride is 1.
+  oshape = ConvertLayout((*out_shape)[0].get<4>(), param.layout.value(), kNCHW);
+  dshape[0] = oshape[0];
+  if (oshape[2] && param.stride[0] == 1) {
+    dshape[2] = oshape[2] + dilated_ksize_y - 1 - 2 * param.pad[0];
+  }
+  if (oshape[3] && param.stride[1] == 1) {
+    dshape[3] = oshape[3] + dilated_ksize_x - 1 - 2 * param.pad[1];
+  }
+  SHAPE_ASSIGN_CHECK(*in_shape, conv::kData,
+      ConvertLayout(dshape, kNCHW, param.layout.value()));
+  // Check whether the kernel sizes are valid
+  if (dshape[2] != 0) {
+    CHECK_LE(dilated_ksize_y, AddPad(dshape[2], param.pad[0])) << "kernel size exceed input";
+  }
+  if (dshape[3] != 0) {
+    CHECK_LE(dilated_ksize_x, AddPad(dshape[3], param.pad[1])) << "kernel size exceed input";
+  }
   return true;
 }
 
