@@ -22,6 +22,7 @@ import time
 import mxnet as mx
 from mxnet import nd
 from mxnet.contrib.quantization import *
+from mxboard import SummaryWriter
 
 
 def download_dataset(dataset_url, dataset_dir, logger=None):
@@ -185,7 +186,8 @@ if __name__ == '__main__':
 
     # loading model
     sym, arg_params, aux_params = load_model(symbol_file, param_file, logger)
-    # sym, arg_params, aux_params = mx.model.load_checkpoint("./model/imagenet1k-mobilenet-v1", 0)
+    with SummaryWriter(logdir='./graph') as sw1:
+        sw1.add_graph(sym)
 
     # make sure that fp32 inference works on the same images as calibrated quantized model
     logger.info('Skipping the first %d batches' % args.num_skipped_batches)

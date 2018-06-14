@@ -105,3 +105,7 @@ python imagenet_inference.py --symbol-file=./model/imagenet1k-squeezenet-v1_0-qu
 
 # MobileNet
 python imagenet_inference.py --symbol-file=./model/imagenet1k-mobilenet-v1-symbol.json --param-file=./model/imagenet1k-mobilenet-v1-0000.params --rgb-mean=123.68,116.779,103.939 --resize=256 --scale=0.017 --num-skipped-batches=50 --num-inference-batches=1 --dataset=./data/val_256_q90.rec --ctx=cpu
+
+# inception-resnet-v2
+
+python imagenet_inference.py --symbol-file=./model/inception-resnet-v2-symbol.json --param-file=./model/inception-resnet-v2-0000.params --rgb-mean=128,128,128 --num-skipped-batches=50 --num-inference-batches=1 --dataset=./data/val_256_q90.rec --ctx=cpu --label-name='prob_label'
