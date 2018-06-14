@@ -39,13 +39,39 @@ static void MKLDNNQuantizedConvForward(const nnvm::NodeAttrs& attrs,
                                        const std::vector<OpReqType> &req,
                                        const std::vector<NDArray> &out_data) {
   CHECK_EQ(in_data[0].dtype(), mshadow::kUint8)
-    << "mkldnn_quantized_conv op only supports uint8 as input type";
+  << "mkldnn_quantized_conv op only supports uint8 as input type";
   TmpMemMgr::Get()->Init(ctx.requested[conv::kTempSpace]);
   const ConvolutionParam& param = nnvm::get<ConvolutionParam>(attrs.parsed);
+  const size_t num_inputs = param.no_bias ? 2 : 3;
+
+  float data_range, weight_range, out_range;
+  float quantized_data_range, quantized_weight_range, quantized_out_range;
+  float data_scale, weight_scale, out_scale, conv_scale;
+  if (param.min_calib_range.has_value() && param.max_calib_range.has_value()) {
+    using red::limits::MaxValue;
+    using red::limits::MinValue;
+    data_range = MaxAbs(*in_data[num_inputs].data().dptr<float>(),
+                        *in_data[num_inputs+1].data().dptr<float>());
+    out_range =
+        MaxAbs(param.min_calib_range.value(), param.max_calib_range.value());
+    weight_range = MaxAbs(*in_data[num_inputs+2].data().dptr<float>(),
+                          *in_data[num_inputs+3].data().dptr<float>());
+    quantized_data_range = MaxAbs(MaxValue<uint8_t>(), MinValue<uint8_t>());
+    quantized_out_range = quantized_weight_range =
+                              MinAbs(MaxValue<int8_t>(), MinValue<int8_t>());
+    data_scale = quantized_data_range / data_range;
+    weight_scale = quantized_weight_range / weight_range;
+    out_scale = quantized_out_range / out_range;
+    conv_scale = out_scale / data_scale / weight_scale;
+  } else {
+    conv_scale = MKLDNNConvForward::NO_SCALE;
+  }
+
   NDArray weight = in_data[conv::kWeight];
   MKLDNNConvForward &fwd = GetConvFwd(attrs, ctx.is_train,
       in_data[conv::kData], weight,
-      param.no_bias ? nullptr : &in_data[conv::kBias], out_data[conv::kOut]);
+      param.no_bias ? nullptr : &in_data[conv::kBias], out_data[conv::kOut],
+      conv_scale);
 
   auto data_mem = in_data[conv::kData].GetMKLDNNDataReorder(fwd.fwd_pd.src_primitive_desc());
   const mkldnn::memory *weight_mem;
@@ -61,7 +87,7 @@ static void MKLDNNQuantizedConvForward(const nnvm::NodeAttrs& attrs,
     CHECK(weight_mem->get_primitive_desc() == fwd.fwd_pd.weights_primitive_desc());
   }
   auto out_mem = CreateMKLDNNMem(out_data[conv::kOut], fwd.fwd_pd.dst_primitive_desc(),
-                                 req[conv::kOut]);
+                                  req[conv::kOut]);
   const mkldnn::memory *bias_mem = nullptr;
   if (!param.no_bias)
     bias_mem = in_data[conv::kBias].GetMKLDNNDataReorder(fwd.fwd_pd.bias_primitive_desc());
@@ -71,13 +97,17 @@ static void MKLDNNQuantizedConvForward(const nnvm::NodeAttrs& attrs,
   CommitOutput(out_data[conv::kOut], out_mem);
   MKLDNNStream::Get()->Submit();
   Stream<cpu> *s = ctx.get_stream<cpu>();
-  const size_t num_inputs = param.no_bias ? 2 : 3;
-  mxnet_op::Kernel<QuantizationRangeForMultiplicationStruct, cpu>::Launch(s, 1,
-           out_data[1].data().dptr<float>(), out_data[2].data().dptr<float>(),
-           in_data[num_inputs].data().dptr<float>(),
-           in_data[num_inputs+1].data().dptr<float>(),
-           in_data[num_inputs+2].data().dptr<float>(),
-           in_data[num_inputs+3].data().dptr<float>());
+  if (param.min_calib_range.has_value() && param.max_calib_range.has_value()) {
+    *out_data[1].data().dptr<float>() = param.min_calib_range.value();
+    *out_data[2].data().dptr<float>() = param.max_calib_range.value();
+  } else {
+    mxnet_op::Kernel<QuantizationRangeForMultiplicationStruct, cpu>::Launch(s, 1,
+            out_data[1].data().dptr<float>(), out_data[2].data().dptr<float>(),
+            in_data[num_inputs].data().dptr<float>(),
+            in_data[num_inputs+1].data().dptr<float>(),
+            in_data[num_inputs+2].data().dptr<float>(),
+            in_data[num_inputs+3].data().dptr<float>());
+  }
 }
 
 NNVM_REGISTER_OP(_contrib_quantized_conv)

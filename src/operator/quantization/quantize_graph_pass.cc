@@ -100,6 +100,8 @@ Graph QuantizeGraph(Graph &&src) {
   auto offline_params = src.GetAttr<std::unordered_set<std::string>>("offline_params");
   auto excluded_nodes = src.GetAttr<std::unordered_set<NodePtr>>("excluded_nodes");
   auto quantized_dtype = src.GetAttr<std::string>("quantized_dtype");
+  auto disable_requantize = src.GetAttr<bool>("disable_requantize");
+  auto input_calib_layers = src.GetAttr<std::unordered_set<std::string>>("input_calib_layers");
 
   // mirror_map stores the mapping from the currently visited graph to the newly created quantized
   // graph. Key is the currently visited graph's node pointer, and value is a copied node of the key
@@ -133,13 +135,24 @@ Graph QuantizeGraph(Graph &&src) {
           quantize_node->attrs.dict["out_type"] = quantized_dtype;
           quantize_node->op()->attr_parser(&(quantize_node->attrs));
 
-          NodePtr min_node = InsertNode("min",
-              e.node->attrs.name + "_min", quantize_node, mirror_entry);
-          min_node->op()->attr_parser(&(min_node->attrs));
+          // If node's input needs offline, and if node's input is an OP which
+          // doesn't need quantize, then add _min/_max variables to the quantize
+          // node which connects between node's input and node which means
+          // the _min/_max will be calculated offline and save into parameter file
+          if (input_calib_layers.count(node->attrs.name) && mirror_node->op()) {
+            NodePtr min_var = CreateNode("nullptr", e.node->attrs.name + "_min");
+            quantize_node->inputs.emplace_back(NodeEntry{min_var, 0, 0});
+            NodePtr max_var = CreateNode("nullptr", e.node->attrs.name + "_max");
+            quantize_node->inputs.emplace_back(NodeEntry{max_var, 0, 0});
+          } else {
+            NodePtr min_node = InsertNode("min",
+                e.node->attrs.name + "_min", quantize_node, mirror_entry);
+            min_node->op()->attr_parser(&(min_node->attrs));
 
-          NodePtr max_node = InsertNode("max",
-              e.node->attrs.name + "_max", quantize_node, mirror_entry);
-          max_node->op()->attr_parser(&(max_node->attrs));
+            NodePtr max_node = InsertNode("max",
+                e.node->attrs.name + "_max", quantize_node, mirror_entry);
+            max_node->op()->attr_parser(&(max_node->attrs));
+          }
 
           mirror_map[e.node.get()] = std::move(quantize_node);
         } else {
@@ -180,16 +193,21 @@ Graph QuantizeGraph(Graph &&src) {
       // out_data, min_range, and max_range.
       if (need_requantize_map.count(new_node->op()) > 0
           && need_requantize_map[new_node->op()](new_node->attrs)) {
-        NodePtr requantize_node = Node::Create();
-        requantize_node->attrs.op = Op::Get("_contrib_requantize");
-        requantize_node->attrs.name = "requantize_" + node->attrs.name;
-        if (requantize_node->op()->attr_parser != nullptr) {
-          requantize_node->op()->attr_parser(&(requantize_node->attrs));
+        if (disable_requantize) {
+          // Set quantized OP's out type to int8 if disable requantize
+          new_node->attrs.dict["out_type"] = "int8";
+        } else {
+          NodePtr requantize_node = Node::Create();
+          requantize_node->attrs.op = Op::Get("_contrib_requantize");
+          requantize_node->attrs.name = "requantize_" + node->attrs.name;
+          if (requantize_node->op()->attr_parser != nullptr) {
+            requantize_node->op()->attr_parser(&(requantize_node->attrs));
+          }
+          for (size_t i = 0; i < 3; ++i) {
+            requantize_node->inputs.emplace_back(NodeEntry{new_node, static_cast<uint32_t>(i), 0});
+          }
+          new_node = requantize_node;
         }
-        for (size_t i = 0; i < 3; ++i) {
-          requantize_node->inputs.emplace_back(NodeEntry{new_node, static_cast<uint32_t>(i), 0});
-        }
-        new_node = requantize_node;
       }
     } else {
       // If the currently visited node does not need quantization, copy the current node to become
@@ -265,38 +283,55 @@ Graph SetCalibTableToQuantizedGraph(Graph&& g) {
     nnvm::Op::GetAttr<mxnet::FNeedRequantize>("FNeedRequantize");
   const auto& calib_table =
     g.GetAttr<std::unordered_map<std::string, std::pair<float, float>>>("calib_table");
+  auto disable_requantize = g.GetAttr<bool>("disable_requantize");
+
   DFSVisit(g.outputs, [&](const NodePtr& node) {
-    // If the current op is requantize
-    // find the thresholds from the calibration table with the key equal
-    // to the current op's input node name, e.g. a quantized_conv2d node.
-    if (node->op() != nullptr && node->op()->name == "_contrib_requantize") {
-      NodePtr quantized_op_node = node->inputs[0].node;
+    bool found = false;
+    NodePtr quantized_op_node;
+    // If requantize is not disabled, find requantize OP and
+    // the thresholds from the calibration table with the key equal
+    // to the requantize OP's input node name, e.g. a quantized_conv node.
+    if (!disable_requantize &&
+        node->op() != nullptr && node->op()->name == "_contrib_requantize") {
+      quantized_op_node = node->inputs[0].node;
       CHECK(quantized_op_node->op() != nullptr) << quantized_op_node->attrs.name
                                                 << " must be an quantized op node";
       CHECK(need_requantize_map.count(quantized_op_node->op()) > 0
           && need_requantize_map[quantized_op_node->op()](quantized_op_node->attrs))
           << quantized_op_node->attrs.name << " op must register FNeedRequantize attr"
                                               " and the attr func should return true";
-      std::string out_data_name = quantized_op_node->attrs.name + "_";
-      auto list_output_names_func = flist_outputs.get(quantized_op_node->op(), nullptr);
-      // Here it's assumed that the quantized_op node only produces three outputs:
-      // out_data, min_range, and max_range. So we want to get the pre-calculated min_calib_range
-      // and max_calib_range from the calibration table for out_data. Here we create the output
-      // data name same as its constructed in GraphExecutor::ExecuteMonCallback.
-      if (list_output_names_func != nullptr) {
-        std::vector<std::string> names = list_output_names_func(quantized_op_node->attrs);
-        CHECK_EQ(names.size(), 3U) << "ListOutputNames is expected to return three string for"
-                                      " quantized operators";
-        out_data_name += names[0];
-      } else {
-        out_data_name += "0";
-      }
-      const auto calib_table_iter = calib_table.find(out_data_name);
-      if (calib_table_iter != calib_table.end()) {
-        node->attrs.dict["min_calib_range"] = std::to_string(calib_table_iter->second.first);
-        node->attrs.dict["max_calib_range"] = std::to_string(calib_table_iter->second.second);
-        node->op()->attr_parser(&(node->attrs));
-      }
+      found = true;
+    // If requantize is disabled, find OPs that needed requantize and
+    // the thresholds from the calibration table with the key equal
+    // to the found OP's name, e.g. a quantized_conv node.
+    } else if (disable_requantize && node->op() != nullptr &&
+            need_requantize_map.count(node->op()) > 0 &&
+            need_requantize_map[node->op()](node->attrs)) {
+      quantized_op_node = node;
+      found = true;
+    }
+    if (!found) {
+      return;
+    }
+    std::string out_data_name = quantized_op_node->attrs.name + "_";
+    auto list_output_names_func = flist_outputs.get(quantized_op_node->op(), nullptr);
+    // Here it's assumed that the quantized_op node only produces three outputs:
+    // out_data, min_range, and max_range. So we want to get the pre-calculated min_calib_range
+    // and max_calib_range from the calibration table for out_data. Here we create the output
+    // data name same as its constructed in GraphExecutor::ExecuteMonCallback.
+    if (list_output_names_func != nullptr) {
+      std::vector<std::string> names = list_output_names_func(quantized_op_node->attrs);
+      CHECK_EQ(names.size(), 3U) << "ListOutputNames is expected to return three string for"
+                                    " quantized operators";
+      out_data_name += names[0];
+    } else {
+      out_data_name += "0";
+    }
+    const auto calib_table_iter = calib_table.find(out_data_name);
+    if (calib_table_iter != calib_table.end()) {
+      node->attrs.dict["min_calib_range"] = std::to_string(calib_table_iter->second.first);
+      node->attrs.dict["max_calib_range"] = std::to_string(calib_table_iter->second.second);
+      node->op()->attr_parser(&(node->attrs));
     }
   });
   return g;

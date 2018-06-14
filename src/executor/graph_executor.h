@@ -69,6 +69,7 @@ class GraphExecutor : public Executor {
   const std::unordered_map<std::string, NDArray>& aux_state_map() const override;
   void Print(std::ostream &os) const override; // NOLINT(*)
   void SetMonitorCallback(const MonitorCallback& callback) override;
+  void SetInputMonitorCallback(const MonitorCallback& callback) override;
   // Initialize the rest of attributes
   // after setting up arguments.
   void FinishInitGraph(nnvm::Symbol symbol, nnvm::Graph g,
@@ -207,6 +208,7 @@ class GraphExecutor : public Executor {
   */
   CachedSegOpr CreateCachedSegOpr(size_t topo_start, size_t topo_end);
   // run the monitor callback for node `nid`
+  void ExecuteInputMonCallback(size_t nid);
   void ExecuteMonCallback(size_t nid);
   // peform bulking and segmentation on an inference graph
   void BulkInferenceOpSegs();
@@ -244,6 +246,8 @@ class GraphExecutor : public Executor {
   size_t num_forward_inputs_{0};
   // number of forward nodes
   size_t num_forward_nodes_{0};
+  // monitor call back
+  std::function<void(const char*, void*)> input_monitor_callback_{nullptr};
   // monitor call back
   std::function<void(const char*, void*)> monitor_callback_{nullptr};
   // whether to enable bulk execution

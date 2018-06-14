@@ -1432,6 +1432,9 @@ MXNET_DLL int MXSymbolInferType(SymbolHandle sym,
  * \param num_offline number of parameters that are quantized offline
  * \param offline_params array of c strings representing the names of params quantized offline
  * \param quantized_dtype the quantized destination type for input data.
+ * \param disable_requantize whether disable requantize OP during quantization
+ * \param num_input_calib number of layers that are doing input calibration
+ * \param input_calib array of c strings representing the names of layers doing input calibration
  */
 MXNET_DLL int MXQuantizeSymbol(SymbolHandle sym_handle,
                                SymbolHandle *ret_sym_handle,
@@ -1439,7 +1442,10 @@ MXNET_DLL int MXQuantizeSymbol(SymbolHandle sym_handle,
                                const SymbolHandle *excluded_symbols,
                                const mx_uint num_offline,
                                const char **offline_params,
-                               const char *quantized_dtype);
+                               const char *quantized_dtype,
+                               const bool disable_requantize,
+                               const mx_uint num_input_calib,
+                               const char **input_calib);
 
 /*!
  * \brief Set calibration table to node attributes in the sym
@@ -1449,13 +1455,15 @@ MXNET_DLL int MXQuantizeSymbol(SymbolHandle sym_handle,
  * \param low_quantiles low quantiles of layers stored in the calibration table
  * \param high_quantiles high quantiles of layers stored in the calibration table
  * \param ret_sym_handle returned symbol
+ * \param disable_requantize whether disable requantize OP during quantization
  */
 MXNET_DLL int MXSetCalibTableToQuantizedSymbol(SymbolHandle qsym_handle,
                                                const mx_uint num_layers,
                                                const char** layer_names,
                                                const float* low_quantiles,
                                                const float* high_quantiles,
-                                               SymbolHandle* ret_sym_handle);
+                                               SymbolHandle* ret_sym_handle,
+                                               const bool disable_requantize);
 
 //--------------------------------------------
 // Part 4: Executor interface
@@ -1692,6 +1700,12 @@ MXNET_DLL int MXExecutorReshape(int partial_shaping,
                                 NDArrayHandle** aux_states,
                                 ExecutorHandle shared_exec,
                                 ExecutorHandle *out);
+/*!
+ * \brief set a call back to notify the completion of operation
+ */
+MXNET_DLL int MXExecutorSetInputMonitorCallback(ExecutorHandle handle,
+                                                ExecutorMonitorCallback callback,
+                                                void* callback_handle);
 /*!
  * \brief set a call back to notify the completion of operation
  */

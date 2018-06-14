@@ -119,6 +119,11 @@ void GraphExecutor::Print(std::ostream &os) const {  // NOLINT(*)
   os << "Total " << 11 << " TempSpace resource requested\n";
 }
 
+void GraphExecutor::SetInputMonitorCallback(const MonitorCallback& callback) {
+  CHECK(callback) << "invalid callback";
+  input_monitor_callback_ = callback;
+}
+
 void GraphExecutor::SetMonitorCallback(const MonitorCallback& callback) {
   CHECK(callback) << "invalid callback";
   monitor_callback_ = callback;
@@ -1559,6 +1564,27 @@ void GraphExecutor::BulkInferenceOpSegs() {
   }
 }
 
+void GraphExecutor::ExecuteInputMonCallback(size_t nid) {
+  const auto& idx = graph_.indexed_graph();
+  std::vector<std::string> input_names;
+  OpNode& opnode = op_nodes_[nid];
+  const auto& inode = idx[nid];
+  const auto& node = idx[nid].source;
+
+  for (auto &e : inode.inputs) {
+    const auto& input_node = idx[e.node_id].source;
+    if (!input_node->is_variable()) {
+      NDArray *cpy = new NDArray(opnode.exec->in_array[0]);
+      // here we need to pass this layer's name as well as input layer's name
+      // so python collect function could check if this layer is within input
+      // calibrated layers and save input stats using input layer's name as key
+      std::string name = node->attrs.name + "-"
+                              + input_node->attrs.name + "_data";
+      this->input_monitor_callback_(name.c_str(), reinterpret_cast<void*>(cpy));
+    }
+  }
+}
+
 void GraphExecutor::ExecuteMonCallback(size_t nid) {
   static const auto& flist_outputs =
       nnvm::Op::GetAttr<nnvm::FListOutputNames>("FListOutputNames");
@@ -1609,6 +1635,10 @@ void GraphExecutor::RunOps(bool is_train, size_t topo_start, size_t topo_end) {
     OpNode& opnode = op_nodes_[nid];
     if (op_nodes_[nid].skip_exec_node) continue;
     opnode.exec->op_ctx.is_train = is_train;
+    // Monitor callbacks
+    if (input_monitor_callback_) {
+      ExecuteInputMonCallback(nid);
+    }
     if (opnode.exec->exec_type() == ExecType::kCrossDeviceCopy) {
       CHECK_EQ(inode.inputs.size(), 1U);
       CHECK_EQ(opnode.exec->in_array.size(), 1U);

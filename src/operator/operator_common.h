@@ -495,6 +495,7 @@ inline void LogUnimplementedOp(const nnvm::NodeAttrs& attrs,
 
 class OpSignature {
   std::vector<int> eles;
+  std::vector<float> float_eles;
   uint64_t hash;
 
  public:
@@ -574,6 +575,10 @@ class OpSignature {
     eles.push_back(val);
   }
 
+  void AddSign(float val) {
+    float_eles.push_back(val);
+  }
+
   bool operator==(const OpSignature &sign) const {
     if (hash != sign.hash)
       return false;
@@ -581,6 +586,11 @@ class OpSignature {
       return false;
     for (size_t i = 0; i < eles.size(); i++)
       if (eles[i] != sign.eles[i])
+        return false;
+    if (float_eles.size() != sign.float_eles.size())
+      return false;
+    for (size_t i = 0; i < float_eles.size(); i++)
+      if (float_eles[i] != sign.float_eles[i])
         return false;
     return true;
   }

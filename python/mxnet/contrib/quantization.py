@@ -40,7 +40,7 @@ from ..context import cpu, Context
 from ..module import Module
 
 
-def _quantize_params(qsym, params):
+def _quantize_params(qsym, params, th_in_dict):
     """Given a quantized symbol and a dict of params that have not been quantized,
     generate quantized params. Currently only supports quantizing the arg_params
     with names of `weight` or `bias`, not aux_params. If `qsym` contains symbols
@@ -69,11 +69,16 @@ def _quantize_params(qsym, params):
             quantized_params[name+'_max'] = vmax
         elif name in params:
             quantized_params[name] = params[name]
+    for name in th_in_dict:
+        layer_name = name.replace('_data', '')
+        quantized_params[layer_name+'_min'] = ndarray.array([th_in_dict[name][0]])
+        quantized_params[layer_name+'_max'] = ndarray.array([th_in_dict[name][1]])
     return quantized_params
 
 
 def _quantize_symbol(sym, excluded_symbols=None, offline_params=None,
-                     quantized_dtype='int8'):
+                     quantized_dtype='int8', disable_requantize=False,
+                     input_calib_layers=None):
     """Given a symbol object representing a neural network of data type FP32,
     quantize it into a INT8 network.
 
@@ -89,6 +94,10 @@ def _quantize_symbol(sym, excluded_symbols=None, offline_params=None,
         avoided.
     quantized_dtype: str
         The quantized destination type for input data.
+    disable_requantize : bool
+        Whether disable requantize OP functionality.
+    input_calib_layers : list of strs
+        Layer names in the network that users want to perform input offline calibration.
     """
     num_excluded_symbols = 0
     excluded_handles = []
@@ -105,6 +114,13 @@ def _quantize_symbol(sym, excluded_symbols=None, offline_params=None,
         for k in offline_params:
             offline.append(c_str(k))
 
+    num_input_calib = 0
+    input_calib = []
+    if input_calib_layers is not None:
+        num_input_calib = len(input_calib_layers)
+        for k in input_calib_layers:
+            input_calib.append(c_str(k))
+
     out = SymbolHandle()
     check_call(_LIB.MXQuantizeSymbol(sym.handle,
                                      ctypes.byref(out),
@@ -112,65 +128,112 @@ def _quantize_symbol(sym, excluded_symbols=None, offline_params=None,
                                      c_array(SymbolHandle, excluded_handles),
                                      mx_uint(num_offline),
                                      c_array(ctypes.c_char_p, offline),
-                                     c_str(quantized_dtype)))
+                                     c_str(quantized_dtype),
+                                     ctypes.c_bool(disable_requantize),
+                                     mx_uint(num_input_calib),
+                                     c_array(ctypes.c_char_p, input_calib)))
     return Symbol(out)
 
 
-class _LayerOutputCollector(object):
-    """Saves layer output NDArray in a dict with layer names as keys and lists of NDArrays as
+class _LayerStatsCollector(object):
+    """Saves layer stats NDArray in dicts with layer names as keys and lists of NDArrays as
     values. The collected NDArrays will be used for calculating the optimal thresholds for
     quantization using KL divergence.
     """
-    def __init__(self, include_layer=None, logger=None):
-        self.nd_dict = {}
+    def __init__(self, include_layer=None, input_calib_layer=None, logger=None):
+        self.nd_in_dict = {}
+        self.nd_out_dict = {}
         self.include_layer = include_layer
+        self.input_calib_layer = input_calib_layer
         self.logger = logger
 
     def collect(self, name, arr):
-        """Callback function for collecting layer output NDArrays."""
+        """Callback function for collecting layer stats NDArrays."""
         name = py_str(name)
-        if self.include_layer is not None and not self.include_layer(name):
+        input_calib_prev_name = None
+        input_calib_name = None
+        if name.endswith('_data'):
+            # For input calib, the name format passing by graph_executor.cc is
+            # "<prev-layer>-<calib-layer>_data", we want to check if calib-layer
+            # is within our input calibrated layers and should save the layer
+            # input stats with previous layer name as key and finally save into
+            # parameter file
+            input_calib_prev_name = name.split('-')[1]
+            input_calib_name = name.split('-')[0] + '_data'
+        if not (self.include_layer is not None and self.include_layer(name)) and \
+           not (self.input_calib_layer is not None and input_calib_name is not None
+                   and self.input_calib_layer(input_calib_name)):
             return
         handle = ctypes.cast(arr, NDArrayHandle)
         arr = NDArray(handle, writable=False).copyto(cpu())
+        if name.endswith('_output'):
+            if name in self.nd_out_dict:
+                self.nd_out_dict[name].append(arr)
+            else:
+                self.nd_out_dict[name] = [arr]
+        elif name.endswith('_data'):
+            if input_calib_prev_name in self.nd_in_dict:
+                self.nd_in_dict[input_calib_prev_name].append(arr)
+            else:
+                self.nd_in_dict[input_calib_prev_name] = [arr]
         if self.logger is not None:
-            self.logger.info("Collecting layer %s output of shape %s" % (name, arr.shape))
-        if name in self.nd_dict:
-            self.nd_dict[name].append(arr)
-        else:
-            self.nd_dict[name] = [arr]
+            self.logger.info("Collecting layer %s stats of shape %s" % (name, arr.shape))
 
 
-class _LayerOutputMinMaxCollector(object):
-    """Saves layer output min and max values in a dict with layer names as keys.
+class _LayerStatsMinMaxCollector(object):
+    """Saves layer stats min and max values in dicts with layer names as keys.
     The collected min and max values will be directly used as thresholds for quantization.
     """
-    def __init__(self, include_layer=None, logger=None):
-        self.min_max_dict = {}
+    def __init__(self, include_layer=None, input_calib_layer=None, logger=None):
+        self.min_max_in_dict = {}
+        self.min_max_out_dict = {}
         self.include_layer = include_layer
+        self.input_calib_layer = input_calib_layer
         self.logger = logger
 
     def collect(self, name, arr):
         """Callback function for collecting min and max values from an NDArray."""
         name = py_str(name)
-        if self.include_layer is not None and not self.include_layer(name):
+        input_calib_prev_name = None
+        input_calib_name = None
+        if name.endswith('_data'):
+            # For input calib, the name format passing by graph_executor.cc is
+            # "<prev-layer>-<calib-layer>_data", we want to check if calib-layer
+            # is within our input calibrated layers and should save the layer
+            # input stats with previous layer name as key and finally save into
+            # parameter file
+            input_calib_prev_name = name.split('-')[1]
+            input_calib_name = name.split('-')[0] + '_data'
+        if not (self.include_layer is not None and self.include_layer(name)) and \
+           not (self.input_calib_layer is not None and input_calib_name is not None
+                   and self.input_calib_layer(input_calib_name)):
             return
         handle = ctypes.cast(arr, NDArrayHandle)
         arr = NDArray(handle, writable=False)
         min_range = ndarray.min(arr).asscalar()
         max_range = ndarray.max(arr).asscalar()
-        if name in self.min_max_dict:
-            cur_min_max = self.min_max_dict[name]
-            self.min_max_dict[name] = (min(cur_min_max[0], min_range),
-                                       max(cur_min_max[1], max_range))
-        else:
-            self.min_max_dict[name] = (min_range, max_range)
+        if name.endswith('_output'):
+            if name in self.min_max_out_dict:
+                cur_min_max = self.min_max_out_dict[name]
+                self.min_max_out_dict[name] = (min(cur_min_max[0], min_range),
+                                               max(cur_min_max[1], max_range))
+            else:
+                self.min_max_out_dict[name] = (min_range, max_range)
+        elif name.endswith('_data'):
+            if input_calib_prev_name in self.min_max_in_dict:
+                cur_min_max = self.min_max_in_dict[input_calib_prev_name]
+                self.min_max_in_dict[input_calib_prev_name] = \
+                                          (min(cur_min_max[0], min_range),
+                                           max(cur_min_max[1], max_range))
+            else:
+                self.min_max_in_dict[input_calib_prev_name] = (min_range, max_range)
+            name = input_calib_name
         if self.logger is not None:
-            self.logger.info("Collecting layer %s output min_range=%f, max_range=%f"
+            self.logger.info("Collecting layer %s stats min_range=%f, max_range=%f"
                              % (name, min_range, max_range))
 
 
-def _calibrate_quantized_sym(qsym, th_dict):
+def _calibrate_quantized_sym(qsym, th_dict, disable_requantize=False):
     """Given a dictionary containing the thresholds for quantizing the layers,
     set the thresholds into the quantized symbol as the params of requantize operators.
     """
@@ -191,15 +254,19 @@ def _calibrate_quantized_sym(qsym, th_dict):
                                                      c_str_array(layer_output_names),
                                                      c_array(ctypes.c_float, min_vals),
                                                      c_array(ctypes.c_float, max_vals),
-                                                     ctypes.byref(calibrated_sym)))
+                                                     ctypes.byref(calibrated_sym),
+                                                     ctypes.c_bool(disable_requantize)))
     return Symbol(calibrated_sym)
 
 
-def _collect_layer_statistics(mod, data, collector, max_num_examples=None, logger=None):
+def _collect_layer_statistics(mod, data, collector, max_num_examples=None,
+                              enable_input_calib=False, logger=None):
     if not isinstance(data, DataIter):
         raise ValueError('Only supports data as a type of DataIter, while received type %s'
                          % str(type(data)))
     mod._exec_group.execs[0].set_monitor_callback(collector.collect)
+    if enable_input_calib:
+        mod._exec_group.execs[0].set_input_monitor_callback(collector.collect)
     num_batches = 0
     num_examples = 0
     for batch in data:
@@ -214,21 +281,31 @@ def _collect_layer_statistics(mod, data, collector, max_num_examples=None, logge
     return num_examples
 
 
-def _collect_layer_output_min_max(mod, data, include_layer=None,
-                                  max_num_examples=None, logger=None):
-    """Collect min and max values from layer outputs and save them in
+def _collect_layer_stats_min_max(mod, data, include_layer=None,
+                                 max_num_examples=None,
+                                 input_calib_layer=None, logger=None):
+    """Collect min and max values from layer stats and save them in
     a dictionary mapped by layer names.
     """
-    collector = _LayerOutputMinMaxCollector(include_layer=include_layer, logger=logger)
-    num_examples = _collect_layer_statistics(mod, data, collector, max_num_examples, logger)
-    return collector.min_max_dict, num_examples
+    collector = _LayerStatsMinMaxCollector(include_layer=include_layer,
+                                           input_calib_layer=input_calib_layer,
+                                           logger=logger)
+    num_examples = _collect_layer_statistics(mod, data, collector,
+                                             max_num_examples,
+                                             input_calib_layer != None, logger)
+    return collector.min_max_in_dict, collector.min_max_out_dict, num_examples
 
 
-def _collect_layer_outputs(mod, data, include_layer=None, max_num_examples=None, logger=None):
-    """Collect layer outputs and save them in a dictionary mapped by layer names."""
-    collector = _LayerOutputCollector(include_layer=include_layer, logger=logger)
-    num_examples = _collect_layer_statistics(mod, data, collector, max_num_examples, logger)
-    return collector.nd_dict, num_examples
+def _collect_layer_stats(mod, data, include_layer=None, max_num_examples=None,
+                         input_calib_layer=None, logger=None):
+    """Collect layer stats and save them in a dictionary mapped by layer names."""
+    collector = _LayerStatsCollector(include_layer=include_layer,
+                                     input_calib_layer=input_calib_layer,
+                                     logger=logger)
+    num_examples = _collect_layer_statistics(mod, data, collector,
+                                             max_num_examples,
+                                             input_calib_layer != None, logger)
+    return collector.nd_in_dict, collector.nd_out_dict, num_examples
 
 
 def _smooth_distribution(p, eps=0.0001):
@@ -406,7 +483,8 @@ def quantize_model(sym, arg_params, aux_params,
                    data_names=('data',), label_names=('softmax_label',),
                    ctx=cpu(), excluded_sym_names=None, calib_mode='entropy',
                    calib_data=None, num_calib_examples=None, calib_layer=None,
-                   quantized_dtype='int8', logger=logging):
+                   quantized_dtype='int8', disable_requantize=False,
+                   input_calib_layer=None, logger=logging):
     """User-level API for generating a quantized model from a FP32 model w/ or w/o calibration.
     The backend quantized operators are only enabled for Linux systems. Please do not run
     inference using the quantized models on Windows for now.
@@ -459,6 +537,15 @@ def quantize_model(sym, arg_params, aux_params,
     quantized_dtype : str
         The quantized destination type for input data. Currently support 'int8'
         and 'uint8', default value is 'int8'.
+    disable_requantize : bool
+        Whether disable requantize OP during quantization. If disabled, the related
+        quantized OP needed requantize will output int8 directly and hence requantize
+        OP is not needed during symbol quantization
+    input_calib_layer: function
+        Given a layer's input name in string, return True or False for deciding whether to
+        calibrate the input for this layer. If yes, the statistics of the layer's input
+        will be collected; otherwise, no information of the layer's input will be collected.
+        If not provided, no layers' inputs will be collected.
     logger : Object
         A logging object for printing information during the process of quantization.
 
@@ -482,15 +569,23 @@ def quantize_model(sym, arg_params, aux_params,
             excluded_syms.append(nodes[idx])
     logger.info('Quantizing symbol')
 
+    input_calib_layers = []
+    if input_calib_layer is not None:
+        # we strip '_output' from list_outputs() to get the layer name we want
+        # to perform input calibration and pass to quantize graph logic
+        for output in sym.get_internals().list_outputs():
+            if (output.endswith('_output') and input_calib_layer is not None
+                    and input_calib_layer(output.replace('_output', '_data'))):
+                input_calib_layers.append(output.replace('_output', ''))
+
     if quantized_dtype != 'int8' and quantized_dtype != 'uint8':
         raise ValueError('unknown quantized_dtype %s received,'
                          ' expected `int8` or `uint8`' % quantized_dtype)
     qsym = _quantize_symbol(sym, excluded_symbols=excluded_syms,
                             offline_params=list(arg_params.keys()),
-                            quantized_dtype=quantized_dtype)
-
-    logger.info('Quantizing parameters')
-    qarg_params = _quantize_params(qsym, arg_params)
+                            quantized_dtype=quantized_dtype,
+                            disable_requantize=disable_requantize,
+                            input_calib_layers=input_calib_layers)
 
     if calib_mode is not None and calib_mode != 'none':
         if not isinstance(ctx, Context):
@@ -511,23 +606,33 @@ def quantize_model(sym, arg_params, aux_params,
             mod.bind(for_training=False, data_shapes=calib_data.provide_data)
         mod.set_params(arg_params, aux_params)
         if calib_mode == 'entropy':
-            nd_dict, num_examples = _collect_layer_outputs(mod, calib_data,
-                                                           include_layer=calib_layer,
-                                                           max_num_examples=num_calib_examples,
-                                                           logger=logger)
-            logger.info('Collected layer outputs from FP32 model using %d examples' % num_examples)
+            nd_in_dict, nd_out_dict, num_examples = \
+                _collect_layer_stats(mod, calib_data, include_layer=calib_layer,
+                                     max_num_examples=num_calib_examples,
+                                     input_calib_layer=input_calib_layer,
+                                     logger=logger)
+            logger.info('Collected layer stats from FP32 model using %d examples' % num_examples)
             logger.info('Calculating optimal thresholds for quantization')
-            th_dict = _get_optimal_thresholds(nd_dict, logger=logger)
+            th_in_dict = _get_optimal_thresholds(nd_in_dict, logger=logger)
+            th_out_dict = _get_optimal_thresholds(nd_out_dict, logger=logger)
         elif calib_mode == 'naive':
-            th_dict, num_examples = _collect_layer_output_min_max(
-                mod, calib_data, include_layer=calib_layer, max_num_examples=num_calib_examples,
-                logger=logger)
-            logger.info('Collected layer output min/max values from FP32 model using %d examples'
+            th_in_dict, th_out_dict, num_examples = \
+                _collect_layer_stats_min_max(mod, calib_data,
+                                             include_layer=calib_layer,
+                                             max_num_examples=num_calib_examples,
+                                             input_calib_layer=input_calib_layer,
+                                             logger=logger)
+            logger.info('Collected layer stats min/max values from FP32 model using %d examples'
                         % num_examples)
         else:
             raise ValueError('unknown calibration mode %s received,'
                              ' expected `none`, `naive`, or `entropy`' % calib_mode)
         logger.info('Calibrating quantized symbol')
-        qsym = _calibrate_quantized_sym(qsym, th_dict)
+        qsym = _calibrate_quantized_sym(qsym, th_out_dict, disable_requantize)
+    else:
+        th_in_dict = {}
+
+    logger.info('Quantizing parameters')
+    qarg_params = _quantize_params(qsym, arg_params, th_in_dict)
 
     return qsym, qarg_params, aux_params

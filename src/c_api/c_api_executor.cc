@@ -597,6 +597,21 @@ int MXExecutorReshape(int partial_shaping,
   API_END_HANDLE_ERROR(delete out);
 }
 
+int MXExecutorSetInputMonitorCallback(ExecutorHandle handle,
+                                      ExecutorMonitorCallback callback,
+                                      void* callback_handle) {
+  API_BEGIN();
+  ExecutorMonitorCallback callback_temp = callback;
+  void* callback_handle_temp = callback_handle;
+  std::function<void(const char*, void*)> clbk
+  = [callback_temp, callback_handle_temp](const char *name, void* handle) {
+    callback_temp(name, handle, callback_handle_temp);
+  };
+  Executor *exec = static_cast<Executor*>(handle);
+  exec->SetInputMonitorCallback(clbk);
+  API_END();
+}
+
 int MXExecutorSetMonitorCallback(ExecutorHandle handle,
                                  ExecutorMonitorCallback callback,
                                  void* callback_handle) {
