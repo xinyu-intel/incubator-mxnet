@@ -25,6 +25,11 @@
 
 namespace mxnet {
 
+MKLDNNStream *MKLDNNStream::Get() {
+  static thread_local MKLDNNStream stream;
+  return &stream;
+}
+
 void *AlignMem(void *mem, size_t size, size_t alignment, size_t *space) {
   if (size > *space)
     return nullptr;
@@ -57,8 +62,11 @@ mkldnn::memory *TmpMemMgr::Alloc(const mkldnn::memory::primitive_desc &pd) {
     this->curr_mem = static_cast<char *>(mem) + pd.get_size();
     return ret.get();
   } else {
-    LOG(WARNING) << "Allocate " << pd.get_size()
-        << " bytes with malloc directly";
+    // If curr_mem has been initialized and we still reach here. It means
+    // the current allocated memory isn't enough.
+    if (this->curr_mem)
+      LOG(WARNING) << "Allocate " << pd.get_size()
+          << " bytes with malloc directly";
     mkldnn_mem_ptr ret(new mkldnn::memory(pd));
     MKLDNNStream::Get()->RegisterMem(ret);
     return ret.get();
@@ -190,7 +198,7 @@ mkldnn_memory_format_t GetDefaultFormat(int num_dims) {
   }
 }
 
-mkldnn_memory_format_t GetDefaultFormat(mkldnn::memory::desc desc) {
+mkldnn_memory_format_t GetDefaultFormat(const mkldnn::memory::desc &desc) {
   if (desc.data.ndims == 1) {
     return desc.data.format;
   } else if (desc.data.ndims == 2) {
@@ -282,10 +290,7 @@ void FallBackCompute(FCompute fn, const nnvm::NodeAttrs &attrs,
     } else {
       if (in_bufs.empty())
         in_bufs.reserve(inputs.size());
-      in_bufs.emplace_back(inputs[i].shape(), inputs[i].ctx(),
-                           false, inputs[i].dtype());
-      const mkldnn::memory *mem = inputs[i].GetMKLDNNData();
-      in_bufs.back().CopyFrom(*mem);
+      in_bufs.push_back(inputs[i].Reorder2Default());
       in_blobs[i] = in_bufs.back().data();
     }
   }
@@ -293,10 +298,15 @@ void FallBackCompute(FCompute fn, const nnvm::NodeAttrs &attrs,
 
   std::vector<TBlob> out_blobs(outputs.size());
   for (size_t i = 0; i < out_blobs.size(); i++) {
-    if (req[i] == kWriteTo)
-      const_cast<NDArray &>(outputs[i]).InvalidateMKLDNNData();
-    CHECK(outputs[i].IsDefaultData());
-    out_blobs[i] = outputs[i].data();
+    NDArray output = outputs[i];
+    // ensure output does not use mkldnn mem.
+    // for inplace, we already converted & copied input above.
+    if ((req[i] == kWriteTo) || (req[i] == kWriteInplace))
+      const_cast<NDArray &>(output).InvalidateMKLDNNData();
+    else if (req[i] == kAddTo)
+      output = outputs[i].Reorder2Default();
+    CHECK(output.IsDefaultData());
+    out_blobs[i] = output.data();
   }
   fn(attrs, ctx, in_blobs, req, out_blobs);
 }

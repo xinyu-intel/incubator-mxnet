@@ -1035,12 +1035,16 @@ def test_sparse_mathematical_core():
 
             try:
                 from scipy import special as scipy_special
-                import_succeeded = True
+                # On scipy v1.0, psi([0, -1, -2, -3, ...]) = [ inf, inf, inf, inf, ...]
+                # On scipy v1.1, psi([0, -1, -2, -3, ...]) = [-inf, nan, nan, nan, ...]
+                # Map the behavior of v1.1 psi() to that of v1.0 for ints <= 0 for consistency
+                scipy_psi = np.vectorize(lambda x: np.inf if float(x).is_integer() and x <= 0 else
+                                         scipy_special.psi(x))
                 # gamma
                 check_sparse_mathematical_core("gamma", stype,
                                                lambda x: mx.sym.sparse.gamma(x),
                                                lambda x: scipy_special.gamma(x),
-                                               lambda x: scipy_special.gamma(x) * scipy_special.psi(x),
+                                               lambda x: scipy_special.gamma(x) * scipy_psi(x),
                                                output_grad_stype=output_grad_stype,
                                                input_grad_stype=input_grad_stype,
                                                force_overlap=force_overlap,
@@ -1049,17 +1053,14 @@ def test_sparse_mathematical_core():
                 check_sparse_mathematical_core("gammaln", stype,
                                                lambda x: mx.sym.sparse.gammaln(x),
                                                lambda x: scipy_special.gammaln(x),
-                                               lambda x: scipy_special.psi(x),
+                                               lambda x: scipy_psi(x),
                                                output_grad_stype=output_grad_stype,
                                                input_grad_stype=input_grad_stype,
                                                force_overlap=force_overlap,
                                                density=density, ograd_density=ograd_density)
 
-            except:
-                if import_succeeded == False:
-                    print("Could not import scipy. Skipping unit tests for special functions")
-                else:
-                    raise
+            except ImportError:
+                print("Could not import scipy. Skipping unit tests for special functions")
 
     for i in range(1):
         print("pass", i)
@@ -1177,10 +1178,13 @@ def test_cast_storage_ex():
         shape_3d = rand_shape_3d()
         check_cast_storage(shape_2d, d, 'csr', 'default')
         check_cast_storage(shape_2d, d, 'default', 'csr')
+        check_cast_storage(shape_2d, d, 'csr', 'csr')
         check_cast_storage(shape_2d, d, 'row_sparse', 'default')
         check_cast_storage(shape_2d, d, 'default', 'row_sparse')
+        check_cast_storage(shape_2d, d, 'row_sparse', 'row_sparse')
         check_cast_storage(shape_3d, d, 'row_sparse', 'default')
         check_cast_storage(shape_3d, d, 'default', 'row_sparse')
+        check_cast_storage(shape_3d, d, 'row_sparse', 'row_sparse')
         for i in range(4, 6):
             shape = rand_shape_nd(i, 5)
             check_cast_storage(shape, d, 'default', 'row_sparse')
@@ -1194,6 +1198,9 @@ def test_cast_storage_ex():
             check_cast_storage((dim0, rnd.randint( 32,  512)), d, 'default', 'csr')
             # test gpu block  kernel
             check_cast_storage((dim0, rnd.randint(512, 1024)), d, 'default', 'csr',
+                               check_numeric_grad=False)
+            # check race condition in block kernel
+            check_cast_storage((200, 128 * 2 + 1), d, 'default', 'csr',
                                check_numeric_grad=False)
             # test gpu thread kernel
             check_cast_storage((dim0, rnd.randint(  1,   32)), d, 'default', 'row_sparse')
@@ -1290,6 +1297,30 @@ def test_sparse_dot():
 
     test_sparse_dot_zero_output(rand_shape_2d(50, 200), False, 40)
     test_sparse_dot_zero_output(rand_shape_2d(50, 200), True, 40)
+
+@with_seed()
+def test_sparse_dot_determinism():
+    def test_dot_determinism(lhs_stype, rhs_stype, lhs_density, rhs_density, transpose_a, transpose_b):
+        lhs_row = rnd.randint(50, 100)
+        lhs_col = rnd.randint(50, 100)
+        if transpose_a:
+            if transpose_b:
+                rhs_shape = (rnd.randint(50, 100), lhs_row)
+            else:
+                rhs_shape = (lhs_row, rnd.randint(50, 100))
+        else:
+            if transpose_b:
+                rhs_shape = (rnd.randint(50, 100), lhs_col)
+            else:
+                rhs_shape = (lhs_col, rnd.randint(50, 100))
+        lhs_shape = (lhs_row, lhs_col)
+        lhs = rand_ndarray(lhs_shape, lhs_stype, density=lhs_density)
+        rhs = rand_ndarray(rhs_shape, rhs_stype, density=rhs_density)
+        res1 = mx.nd.sparse.dot(lhs, rhs, transpose_a=transpose_a, transpose_b=transpose_b)
+        res2 = mx.nd.sparse.dot(lhs, rhs, transpose_a=transpose_a, transpose_b=transpose_b)
+        assert_almost_equal(res1.asnumpy(), res2.asnumpy(), rtol=0.0, atol=0.0)
+
+    test_dot_determinism('csr', 'default', 0.1, 1.0, True, False)
 
 
 @with_seed()
@@ -1674,6 +1705,29 @@ def test_sparse_embedding():
     check_sparse_embedding(in_dim, out_dim, batch, densities, True)
     check_sparse_embedding(in_dim, out_dim, batch, densities, False)
 
+
+@with_seed()
+def test_sparse_broadcast_mul_div():
+    def check_broadcast_mul(mx_lhs, mx_rhs, np_lhs, np_rhs, dtype):
+        assert_almost_equal(mx.nd.sparse.multiply(mx_lhs, mx_rhs).asnumpy(), np.multiply(np_lhs, np_rhs), atol=1e-4)
+    def check_broadcast_div(mx_lhs, mx_rhs, np_lhs, np_rhs, dtype):
+        assert_almost_equal(mx.nd.sparse.divide(mx_lhs, mx_rhs).asnumpy(), np.divide(np_lhs, np_rhs), atol=1e-4)
+    stype = 'csr'
+    shape = rand_shape_2d()
+    num_rows = shape[0]
+    num_cols = shape[1]
+    for density in [0.1 * i for i in range(10)]:
+        mx_lhs = rand_ndarray(shape, stype, density)
+        np_lhs = mx_lhs.asnumpy()
+        mx_rhs_row_2D = rand_ndarray((1, num_cols), 'default')
+        mx_rhs_row_1D = mx_rhs_row_2D.reshape((num_cols))
+        mx_rhs_col = rand_ndarray((num_rows, 1), 'default')
+        mx_rhs_scalar_2D = rand_ndarray((1, 1), 'default')
+        mx_rhs_scalar_1D = mx_rhs_scalar_2D.reshape((1, ))
+        for mx_rhs in [mx_rhs_row_2D, mx_rhs_row_1D, mx_rhs_col, mx_rhs_scalar_2D, mx_rhs_scalar_1D]:
+            np_rhs = mx_rhs.asnumpy()
+            check_broadcast_mul(mx_lhs, mx_rhs, np_lhs, np_rhs, np.float32)
+            check_broadcast_div(mx_lhs, mx_rhs, np_lhs, np_rhs, np.float32)
 
 @with_seed()
 def test_scatter_ops():

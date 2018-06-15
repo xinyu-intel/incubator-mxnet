@@ -4,9 +4,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>ml.dmlc.mxnet</groupId>
+    <groupId>org.apache.mxnet</groupId>
     <artifactId>mxnet-scala-native-parent</artifactId>
-    <version>1.2.0-SNAPSHOT</version>
+    <version>1.2.1-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
@@ -18,9 +18,9 @@
 
   <dependencies>
     <dependency>
-      <groupId>ml.dmlc.mxnet</groupId>
+      <groupId>org.apache.mxnet</groupId>
       <artifactId>mxnet-core_${scala.binary.version}</artifactId>
-      <version>1.2.0-SNAPSHOT</version>
+      <version>1.2.1-SNAPSHOT</version>
       <type>jar</type>
       <scope>compile</scope>
     </dependency>
@@ -28,6 +28,13 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -47,7 +54,7 @@
             <source>
               <directory>../src/main/native</directory>
               <fileNames>
-                <fileName>ml_dmlc_mxnet_native_c_api.cc</fileName>
+                <fileName>org_apache_mxnet_native_c_api.cc</fileName>
               </fileNames>
             </source>
           </sources>
@@ -55,7 +62,7 @@
             <compilerStartOption>-std=c++0x</compilerStartOption>
           </compilerStartOptions>
           <compilerEndOptions>
-            <compilerEndOption>-I../../../include</compilerEndOption>
+            <compilerEndOption>-I${project.basedir}/../../../include</compilerEndOption>
             <compilerEndOption>${all_includes}</compilerEndOption>
             <compilerEndOption>${cflags}</compilerEndOption>
           </compilerEndOptions>
@@ -83,9 +90,9 @@
               <javahProvider>default</javahProvider>
               <javahOutputDirectory>${project.build.directory}/custom-javah</javahOutputDirectory>
               <workingDirectory>${basedir}</workingDirectory>
-              <javahOutputFileName>ml_dmlc_mxnet_native_c_api.h</javahOutputFileName>
+              <javahOutputFileName>org_apache_mxnet_native_c_api.h</javahOutputFileName>
               <javahClassNames>
-                <javahClassName>ml.dmlc.mxnet.LibInfo</javahClassName>
+                <javahClassName>org.apache.mxnet.LibInfo</javahClassName>
               </javahClassNames>
             </configuration>
             <goals>

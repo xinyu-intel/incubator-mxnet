@@ -43,13 +43,10 @@ namespace mxnet {
 namespace op {
 
 bool SupportMKLDNNAct(const ActivationParam& param) {
-  // We only enable ReLU for now. It seems other activations have some precision
-  // problems.
-  return param.act_type == activation::kReLU;
-#if 0
+  return param.act_type == activation::kReLU
       || param.act_type == activation::kSigmoid
-      || param.act_type == activation::kSoftReLU;
-#endif
+      || param.act_type == activation::kSoftReLU
+      || param.act_type == activation::kTanh;
 }
 
 static inline mkldnn::algorithm GetMKLDNNActAlgo(const ActivationParam& param) {
@@ -168,6 +165,8 @@ void MKLDNNActivationForward(const nnvm::NodeAttrs& attrs, const OpContext &ctx,
   stream->Submit();
 }
 
+// For backward relu activation, it's okay to pass "out_data" as "in_data" to this
+// function, since the computation only involes non-zeros.
 void MKLDNNActivationBackward(const nnvm::NodeAttrs& attrs, const OpContext &ctx,
                               const NDArray &out_grad, const NDArray &in_data,
                               const OpReqType &req, const NDArray &in_grad) {

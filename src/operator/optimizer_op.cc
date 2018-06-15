@@ -42,10 +42,11 @@ DMLC_REGISTER_PARAMETER(AdagradParam);
 
 NNVM_REGISTER_OP(signsgd_update)
 .describe(R"code(Update function for SignSGD optimizer.
+
 .. math::
 
  g_t = \nabla J(W_{t-1})\\
- W_t = W_{t-1} - \eta_t \text{sign}(g_t)}
+ W_t = W_{t-1} - \eta_t \text{sign}(g_t)
 
 It updates the weights using::
 
@@ -72,7 +73,7 @@ NNVM_REGISTER_OP(signum_update)
 
  g_t = \nabla J(W_{t-1})\\
  m_t = \beta m_{t-1} + (1 - \beta) g_t\\
- W_t = W_{t-1} - \eta_t \text{sign}(m_t)}
+ W_t = W_{t-1} - \eta_t \text{sign}(m_t)
 
 It updates the weights using::
  state = momentum * state + (1-momentum) * gradient
@@ -98,6 +99,38 @@ Where the parameter ``momentum`` is the decay rate of momentum estimates at each
 .add_argument("mom", "NDArray-or-Symbol", "Momentum")
 .add_arguments(SignumParam::__FIELDS__());
 
+template<int req>
+struct SGDMomStdDnsRspDnsKernel<req, cpu> {
+  template<typename DType, typename IType, typename RType>
+  MSHADOW_XINLINE static void Map(int i, index_t row_length, DType* out_data,
+    DType* mom_data, const DType* weight_data, const IType* grad_idx,
+    const DType* grad_data, const RType* prefix_sum, const DType clip_gradient,
+    const DType momentum, const DType lr, const DType wd, const DType rescale_grad) {
+    const DType rate = lr * wd;
+    const bool non_zero = (i == 0) ? prefix_sum[0] > 0
+                                   : prefix_sum[i] > prefix_sum[i-1];
+
+    const index_t row_i = i * row_length;
+    const RType grad_i = (prefix_sum[i]-1) * row_length;
+    for (index_t j = 0; j < row_length; j++) {
+      const index_t data_i = row_i + j;
+      const DType grad = non_zero ? grad_data[grad_i + j]
+                                  : static_cast<DType>(0);
+      if (clip_gradient >= 0.0f) {
+        mom_data[data_i] = momentum * mom_data[data_i]
+                - rate * weight_data[data_i]
+                - lr *
+                mshadow_op::clip::Map(rescale_grad * grad,
+                                      clip_gradient);
+      } else {
+        mom_data[data_i] = momentum * mom_data[data_i]
+                  - rate * weight_data[data_i]
+                  - lr * rescale_grad * grad;
+      }
+      KERNEL_ASSIGN(out_data[data_i], req, weight_data[data_i] + mom_data[data_i]);
+    }
+  }
+};
 
 template<>
 void SGDMomStdUpdateDnsRspDnsImpl<cpu>(const SGDMomParam& param,
@@ -139,7 +172,7 @@ void SGDMomStdUpdateDnsRspDnsImpl<cpu>(const SGDMomParam& param,
             prefix_sum[i] += prefix_sum[i - 1];
           }
         }
-        Kernel<SGDMomStdDnsRspDnsKernel<req_type>, cpu>::Launch(s, num_rows, row_length,
+        Kernel<SGDMomStdDnsRspDnsKernel<req_type, cpu>, cpu>::Launch(s, num_rows, row_length,
           out_data, mom_data, weight_data, grad_idx, grad_val, prefix_sum,
           static_cast<DType>(param.clip_gradient), static_cast<DType>(param.momentum),
           static_cast<DType>(param.lr), static_cast<DType>(param.wd),
@@ -366,7 +399,7 @@ available at http://proceedings.mlr.press/v70/zheng17a/zheng17a.pdf.
 
  g_t = \nabla J(W_{t-1})\\
  v_t = \beta_2 v_{t-1} + (1 - \beta_2) g_t^2\\
- d_t = \frac{ (1 - \beta_1^t) }{ \eta_t } (\sqrt{ \frac{ v_t }{ 1 - \beta_2^t } } + \epsilon)
+ d_t = \frac{ 1 - \beta_1^t }{ \eta_t } (\sqrt{ \frac{ v_t }{ 1 - \beta_2^t } } + \epsilon)
  \sigma_t = d_t - \beta_1 d_{t-1}
  z_t = \beta_1 z_{ t-1 } + (1 - \beta_1^t) g_t - \sigma_t W_{t-1}
  W_t = - \frac{ z_t }{ d_t }

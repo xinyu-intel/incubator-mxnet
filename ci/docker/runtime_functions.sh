@@ -31,6 +31,37 @@ clean_repo() {
     git submodule update --init --recursive
 }
 
+build_wheel() {
+
+    set -ex
+    pushd .
+
+    PYTHON_DIR=${1:-/work/mxnet/python}
+    BUILD_DIR=${2:-/work/build}
+
+    # build
+
+    export MXNET_LIBRARY_PATH=${BUILD_DIR}/libmxnet.so
+
+    cd ${PYTHON_DIR}
+    python setup.py bdist_wheel --universal
+
+    # repackage
+
+    # Fix pathing issues in the wheel.  We need to move libmxnet.so from the data folder to the
+    # mxnet folder, then repackage the wheel.
+    WHEEL=`readlink -f dist/*.whl`
+    TMPDIR=`mktemp -d`
+    unzip -d ${TMPDIR} ${WHEEL}
+    rm ${WHEEL}
+    cd ${TMPDIR}
+    mv *.data/data/mxnet/libmxnet.so mxnet
+    zip -r ${WHEEL} .
+    cp ${WHEEL} ${BUILD_DIR}
+    rm -rf ${TMPDIR}
+
+    popd
+}
 
 # Build commands: Every platform in docker/Dockerfile.build.<platform> should have a corresponding
 # function here with the same suffix:
@@ -39,37 +70,11 @@ build_jetson() {
     set -ex
     pushd .
 
-    #cd /work/mxnet
-    #make -j$(nproc) USE_OPENCV=0 USE_BLAS=openblas USE_SSE=0 USE_CUDA=1 USE_CUDNN=1 ENABLE_CUDA_RTC=0 USE_NCCL=0 USE_CUDA_PATH=/usr/local/cuda/
-    cd /work/build
-    cmake\
-        -DUSE_CUDA=OFF\
-        -DUSE_OPENCV=OFF\
-        -DUSE_OPENMP=ON\
-        -DUSE_SIGNAL_HANDLER=ON\
-        -DUSE_MKL_IF_AVAILABLE=OFF\
-        -DUSE_LAPACK=OFF\
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo\
-        -G Ninja /work/mxnet
-    ninja
-    export MXNET_LIBRARY_PATH=`pwd`/libmxnet.so
-    cd /work/mxnet/python
-    python setup.py bdist_wheel --universal
+    cp make/crosscompile.jetson.mk ./config.mk
+    make -j$(nproc)
 
+    build_wheel /work/mxnet/python /work/mxnet/lib
 
-    # Fix pathing issues in the wheel.  We need to move libmxnet.so from the data folder to the root
-    # of the wheel, then repackage the wheel.
-    # Create a temp dir to do the work.
-    # TODO: move apt call to install
-    WHEEL=`readlink -f dist/*.whl`
-    TMPDIR=`mktemp -d`
-    unzip -d $TMPDIR $WHEEL
-    rm $WHEEL
-    cd $TMPDIR
-    mv *.data/data/mxnet/libmxnet.so mxnet
-    zip -r $WHEEL $TMPDIR
-    cp $WHEEL /work/build
-    rm -rf $TMPDIR
     popd
 }
 
@@ -83,41 +88,56 @@ build_armv6() {
     # file tries to add -llapack. Lapack functionality though, requires -lgfortran
     # to be linked additionally.
 
+    # We do not need OpenMP, since most armv6 systems have only 1 core
+
     cmake \
-        -DCMAKE_TOOLCHAIN_FILE=$CROSS_ROOT/Toolchain.cmake \
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} \
+	-DCMAKE_CROSSCOMPILING=ON \
         -DUSE_CUDA=OFF \
         -DUSE_OPENCV=OFF \
+        -DUSE_OPENMP=OFF \
         -DUSE_SIGNAL_HANDLER=ON \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_BUILD_TYPE=Release \
         -DUSE_MKL_IF_AVAILABLE=OFF \
         -DUSE_LAPACK=OFF \
+        -DBUILD_CPP_EXAMPLES=OFF \
         -Dmxnet_LINKER_LIBS=-lgfortran \
         -G Ninja /work/mxnet
+
     ninja
-    export MXNET_LIBRARY_PATH=`pwd`/libmxnet.so
-    cd /work/mxnet/python
-    python setup.py bdist_wheel --universal
-    cp dist/*.whl /work/build
+    build_wheel
+
     popd
 }
 
 build_armv7() {
     set -ex
     pushd .
+    
     cd /work/build
-    cmake\
-        -DUSE_CUDA=OFF\
-        -DUSE_OPENCV=OFF\
-        -DUSE_OPENMP=OFF\
-        -DUSE_SIGNAL_HANDLER=ON\
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo\
-        -DUSE_MKL_IF_AVAILABLE=OFF\
+
+    # Lapack functionality will be included and statically linked to openblas.
+    # But USE_LAPACK needs to be set to OFF, otherwise the main CMakeLists.txt
+    # file tries to add -llapack. Lapack functionality though, requires -lgfortran
+    # to be linked additionally.
+
+    cmake \
+        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} \
+        -DCMAKE_CROSSCOMPILING=ON \
+        -DUSE_CUDA=OFF \
+        -DUSE_OPENCV=OFF \
+        -DUSE_OPENMP=ON \
+        -DUSE_SIGNAL_HANDLER=ON \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DUSE_MKL_IF_AVAILABLE=OFF \
+        -DUSE_LAPACK=OFF \
+        -DBUILD_CPP_EXAMPLES=OFF \
+        -Dmxnet_LINKER_LIBS=-lgfortran \
         -G Ninja /work/mxnet
+
     ninja
-    export MXNET_LIBRARY_PATH=`pwd`/libmxnet.so
-    cd /work/mxnet/python
-    python setup.py bdist_wheel --universal
-    cp dist/*.whl /work/build
+    build_wheel
+
     popd
 }
 
@@ -131,6 +151,7 @@ build_amzn_linux_cpu() {
         -DCMAKE_BUILD_TYPE=RelWithDebInfo\
         -DUSE_MKL_IF_AVAILABLE=OFF\
         -DUSE_LAPACK=OFF\
+        -DUSE_DIST_KVSTORE=ON\
         -G Ninja /work/mxnet
     ninja
     export MXNET_LIBRARY_PATH=`pwd`/libmxnet.so
@@ -180,6 +201,7 @@ build_centos7_cpu() {
         USE_LAPACK=1 \
         USE_LAPACK_PATH=/usr/lib64/liblapack.so \
         USE_BLAS=openblas \
+        USE_DIST_KVSTORE=1 \
         -j$(nproc)
 }
 
@@ -206,6 +228,7 @@ build_centos7_gpu() {
         USE_CUDA=1 \
         USE_CUDA_PATH=/usr/local/cuda \
         USE_CUDNN=1 \
+        USE_DIST_KVSTORE=1 \
         -j$(nproc)
 }
 
@@ -215,6 +238,7 @@ build_ubuntu_cpu_openblas() {
         DEV=1                         \
         USE_CPP_PACKAGE=1             \
         USE_BLAS=openblas             \
+        USE_DIST_KVSTORE=1            \
         -j$(nproc)
 }
 
@@ -224,6 +248,7 @@ build_ubuntu_cpu_clang39() {
         USE_CPP_PACKAGE=1             \
         USE_BLAS=openblas             \
         USE_OPENMP=0                  \
+        USE_DIST_KVSTORE=1            \
         CXX=clang++-3.9               \
         CC=clang-3.9                  \
         -j$(nproc)
@@ -235,6 +260,7 @@ build_ubuntu_cpu_clang50() {
         USE_CPP_PACKAGE=1             \
         USE_BLAS=openblas             \
         USE_OPENMP=1                  \
+        USE_DIST_KVSTORE=1            \
         CXX=clang++-5.0               \
         CC=clang-5.0                  \
         -j$(nproc)
@@ -296,6 +322,7 @@ build_ubuntu_gpu_cuda91_cudnn7() {
         USE_CUDA_PATH=/usr/local/cuda \
         USE_CUDNN=1                   \
         USE_CPP_PACKAGE=1             \
+        USE_DIST_KVSTORE=1            \
         -j$(nproc)
 }
 
@@ -326,6 +353,9 @@ build_ubuntu_gpu_cmake_mkldnn() {
         /work/mxnet
 
     ninja -v
+    # libmkldnn.so.0 is a link file. We need an actual binary file named libmkldnn.so.0.
+    cp 3rdparty/mkldnn/src/libmkldnn.so.0 3rdparty/mkldnn/src/libmkldnn.so.0.tmp
+    mv 3rdparty/mkldnn/src/libmkldnn.so.0.tmp 3rdparty/mkldnn/src/libmkldnn.so.0
 }
 
 build_ubuntu_gpu_cmake() {
@@ -336,6 +366,7 @@ build_ubuntu_gpu_cmake() {
         -DUSE_CUDNN=1              \
         -DUSE_MKLML_MKL=0          \
         -DUSE_MKLDNN=0             \
+        -DUSE_DIST_KVSTORE=1       \
         -DCMAKE_BUILD_TYPE=Release \
         -G Ninja                   \
         /work/mxnet
@@ -375,6 +406,18 @@ unittest_ubuntu_python3_cpu() {
     export MXNET_STORAGE_FALLBACK_LOG_VERBOSE=0
     nosetests-3.4 --verbose tests/python/unittest
     nosetests-3.4 --verbose tests/python/quantization
+}
+
+unittest_ubuntu_python3_cpu_mkldnn() {
+    set -ex
+    export PYTHONPATH=./python/ 
+    # MXNET_MKLDNN_DEBUG is buggy and produces false positives
+    # https://github.com/apache/incubator-mxnet/issues/10026
+    #export MXNET_MKLDNN_DEBUG=1  # Ignored if not present
+    export MXNET_STORAGE_FALLBACK_LOG_VERBOSE=0
+    nosetests-3.4 --verbose tests/python/unittest
+    nosetests-3.4 --verbose tests/python/quantization
+    nosetests-3.4 --verbose tests/python/mkl
 }
 
 unittest_ubuntu_python2_gpu() {
@@ -423,8 +466,14 @@ unittest_ubuntu_python3_quantization_gpu() {
 
 unittest_ubuntu_cpu_scala() {
     set -ex
-    make scalapkg USE_BLAS=openblas
-    make scalatest USE_BLAS=openblas
+    make scalapkg USE_BLAS=openblas USE_DIST_KVSTORE=1
+    make scalatest USE_BLAS=openblas USE_DIST_KVSTORE=1
+}
+
+unittest_ubuntu_gpu_scala() {
+    set -ex
+    make scalapkg USE_OPENCV=1 USE_BLAS=openblas USE_CUDA=1 USE_CUDA_PATH=/usr/local/cuda USE_CUDNN=1 USE_DIST_KVSTORE=1
+    make scalatest USE_OPENCV=1 USE_BLAS=openblas USE_CUDA=1 USE_CUDA_PATH=/usr/local/cuda USE_CUDNN=1 SCALA_TEST_ON_GPU=1 USE_DIST_KVSTORE=1
 }
 
 unittest_ubuntu_cpugpu_perl() {
@@ -494,6 +543,15 @@ integrationtest_ubuntu_gpu_cpp_package() {
     cpp-package/tests/ci_test.sh
 }
 
+integrationtest_ubuntu_gpu_dist_kvstore() {
+    set -ex
+    export PYTHONPATH=./python/
+    export MXNET_STORAGE_FALLBACK_LOG_VERBOSE=0
+    cd tests/nightly/
+    ../../tools/launch.py -n 7 --launcher local python dist_sync_kvstore.py
+    ../../tools/launch.py -n 7 --launcher local python dist_sync_kvstore.py --no-multiprecision
+    ../../tools/launch.py -n 7 --launcher local python dist_device_sync_kvstore.py
+}
 
 test_ubuntu_cpu_python2() {
     set -ex
@@ -526,6 +584,17 @@ test_ubuntu_cpu_python3() {
     cd /work/mxnet
     python3 -m "nose" --with-timer --verbose tests/python/unittest
 
+    popd
+}
+
+build_docs() {
+    set -ex
+    pushd .
+    cd /work/mxnet/docs/build_version_doc
+    ./build_all_version.sh $1
+    ./update_all_version.sh $2 $3 $4
+    cd VersionedWeb
+    tar -zcvf ../artifacts.tgz .
     popd
 }
 
