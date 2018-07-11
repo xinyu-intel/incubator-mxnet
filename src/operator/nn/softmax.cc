@@ -38,10 +38,8 @@ static void SoftmaxComputeExCPU(const nnvm::NodeAttrs& attrs,
                                 const std::vector<NDArray>& inputs,
                                 const std::vector<OpReqType>& req,
                                 const std::vector<NDArray>& outputs) {
-  const SoftmaxParam& param = nnvm::get<SoftmaxParam>(attrs.parsed);
   // It seems MKLDNN softmax doesn't support training.
-  // and it only supports non-negative axis.
-  if (SupportMKLDNN(inputs[0]) && !ctx.is_train && param.axis >= 0) {
+  if (SupportMKLDNN(inputs[0]) && !ctx.is_train) {
     MKLDNN_OPCHECK_INIT(false, outputs.size(), inputs, outputs);
     MKLDNNSoftmaxForward(attrs, ctx, inputs[0], req[0], outputs[0]);
     auto fn = SoftmaxCompute<cpu, mxnet_op::softmax_fwd>;
@@ -96,6 +94,10 @@ Example::
 
 )code" ADD_FILELINE)
 .set_attr_parser(ParamParser<SoftmaxParam>)
+.set_attr<nnvm::FListOutputNames>("FListOutputNames",
+    [](const NodeAttrs& attrs) {
+    return std::vector<std::string>{"output"};
+})
 .set_attr<FCompute>("FCompute<cpu>", SoftmaxCompute<cpu, mxnet_op::softmax_fwd>)
 #if MXNET_USE_MKLDNN == 1
 .set_attr<FComputeEx>("FComputeEx<cpu>", SoftmaxComputeExCPU)

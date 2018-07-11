@@ -44,12 +44,14 @@ use AI::MXNet::Visualization;
 use AI::MXNet::RecordIO;
 use AI::MXNet::Image;
 use AI::MXNet::Contrib;
+use AI::MXNet::LinAlg;
 use AI::MXNet::CachedOp;
 use AI::MXNet::AutoGrad;
 use AI::MXNet::Gluon;
 use AI::MXNet::NDArray::Sparse;
 use AI::MXNet::Symbol::Sparse;
-our $VERSION = '1.2';
+use AI::MXNet::Engine;
+our $VERSION = '1.3';
 
 sub import
 {
@@ -63,6 +65,7 @@ sub import
             package $short_name;
             no warnings 'redefine';
             sub nd { 'AI::MXNet::NDArray' }
+            sub ndarray { 'AI::MXNet::NDArray' }
             sub sym { 'AI::MXNet::Symbol' }
             sub symbol { 'AI::MXNet::Symbol' }
             sub init { 'AI::MXNet::Initializer' }
@@ -74,6 +77,7 @@ sub import
             sub Context { shift; AI::MXNet::Context->new(\@_) }
             sub context { 'AI::MXNet::Context' }
             sub cpu { AI::MXNet::Context->cpu(\$_[1]//0) }
+            sub cpu_pinned { AI::MXNet::Context->cpu_pinned(\$_[1]//0) }
             sub gpu { AI::MXNet::Context->gpu(\$_[1]//0) }
             sub kv { 'AI::MXNet::KVStore' }
             sub recordio { 'AI::MXNet::RecordIO' }
@@ -88,9 +92,12 @@ sub import
             sub img { 'AI::MXNet::Image' }
             sub image { 'AI::MXNet::Image' }
             sub contrib { 'AI::MXNet::Contrib' }
+            sub linalg { 'AI::MXNet::LinAlg' }
             sub autograd { 'AI::MXNet::AutoGrad' }
+            sub engine { 'AI::MXNet::Engine' }
             sub name { '$short_name' }
             sub rtc { '$short_name' }
+            sub gluon { 'AI::MXNet::Gluon' }
             sub CudaModule { shift; AI::MXNet::CudaModule->new(\@_) }
             sub AttrScope { shift; AI::MXNet::Symbol::AttrScope->new(\@_) }
             *AI::MXNet::Symbol::AttrScope::current = sub { \$${short_name}::AttrScope; };
@@ -103,6 +110,8 @@ sub import
             *AI::MXNet::Context::current_context = sub { \$${short_name}::Context; };
             *AI::MXNet::Context::set_current = sub { \$${short_name}::Context = \$_[1]; };
             \$${short_name}::Context = AI::MXNet::Context->new(device_type => 'cpu', device_id => 0);
+            package nd;
+            \@nd::ISA = ('AI::MXNet::NDArray');
             1;
 EOP
             eval $short_name_package;

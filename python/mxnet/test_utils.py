@@ -44,7 +44,7 @@ except ImportError:
     # in rare cases requests may be not installed
     pass
 import mxnet as mx
-from .context import Context
+from .context import Context, current_context
 from .ndarray.ndarray import _STORAGE_TYPE_STR_TO_ID
 from .ndarray import array
 from .symbol import Symbol
@@ -54,12 +54,12 @@ def default_context():
     """Get default context for regression test."""
     # _TODO: get context from environment variable to support
     # testing with GPUs
-    return Context.default_ctx
+    return current_context()
 
 
 def set_default_context(ctx):
     """Set default context."""
-    Context.default_ctx = ctx
+    Context._default_ctx.value = ctx
 
 
 def default_dtype():
@@ -1206,7 +1206,7 @@ def check_speed(sym, location=None, ctx=None, N=20, grad_req=None, typ="whole",
 
 def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
                       arg_params=None, aux_params=None, tol=None,
-                      raise_on_err=True, ground_truth=None, equal_nan=False):
+                      raise_on_err=True, ground_truth=None, equal_nan=False, use_uniform=False):
     """Check symbol gives the same output for different running context
 
     Parameters
@@ -1219,7 +1219,10 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
         Standard deviation of the inner normal distribution. Used in initialization.
     grad_req : str or list of str or dict of str to str
         Gradient requirement.
-
+    use_unifrom: bool
+        Optional, When flag set to true,
+        random input data generated follows uniform distribution,
+        not normal distribution
     Examples
     --------
     >>> # create the symbol
@@ -1251,13 +1254,15 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
                np.dtype(np.float32): 1e-3,
                np.dtype(np.float64): 1e-5,
                np.dtype(np.uint8): 0,
-               np.dtype(np.int32): 0}
+               np.dtype(np.int32): 0,
+               np.dtype(np.int64): 0}
     elif isinstance(tol, numbers.Number):
         tol = {np.dtype(np.float16): tol,
                np.dtype(np.float32): tol,
                np.dtype(np.float64): tol,
                np.dtype(np.uint8): tol,
-               np.dtype(np.int32): tol}
+               np.dtype(np.int32): tol,
+               np.dtype(np.int64): tol}
 
     assert len(ctx_list) > 1
     if isinstance(sym, Symbol):
@@ -1277,7 +1282,10 @@ def check_consistency(sym, ctx_list, scale=1.0, grad_req='write',
     aux_params = {} if aux_params is None else aux_params
     for n, arr in exe_list[0].arg_dict.items():
         if n not in arg_params:
-            arg_params[n] = np.random.normal(size=arr.shape, scale=scale)
+            if use_uniform:
+                arg_params[n] = np.random.uniform(low=-0.92, high=0.92, size=arr.shape)
+            else:
+                arg_params[n] = np.random.normal(size=arr.shape, scale=scale)
     for n, arr in exe_list[0].aux_dict.items():
         if n not in aux_params:
             aux_params[n] = 0
@@ -1367,7 +1375,7 @@ def list_gpus():
             pass
     return range(len([i for i in re.split('\n') if 'GPU' in i]))
 
-def download(url, fname=None, dirname=None, overwrite=False):
+def download(url, fname=None, dirname=None, overwrite=False, retries=5):
     """Download an given URL
 
     Parameters
@@ -1385,12 +1393,17 @@ def download(url, fname=None, dirname=None, overwrite=False):
         Default is false, which means skipping download if the local file
         exists. If true, then download the url to overwrite the local file if
         exists.
+    retries : integer, default 5
+        The number of times to attempt the download in case of failure or non 200 return codes
 
     Returns
     -------
     str
         The filename of the downloaded file
     """
+
+    assert retries >= 0, "Number of retries should be at least 0"
+
     if fname is None:
         fname = url.split('/')[-1]
 
@@ -1411,12 +1424,24 @@ def download(url, fname=None, dirname=None, overwrite=False):
         logging.info("%s exists, skipping download", fname)
         return fname
 
-    r = requests.get(url, stream=True)
-    assert r.status_code == 200, "failed to open %s" % url
-    with open(fname, 'wb') as f:
-        for chunk in r.iter_content(chunk_size=1024):
-            if chunk: # filter out keep-alive new chunks
-                f.write(chunk)
+    while retries+1 > 0:
+        # Disable pyling too broad Exception
+        # pylint: disable=W0703
+        try:
+            r = requests.get(url, stream=True)
+            assert r.status_code == 200, "failed to open %s" % url
+            with open(fname, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024):
+                    if chunk: # filter out keep-alive new chunks
+                        f.write(chunk)
+                break
+        except Exception as e:
+            retries -= 1
+            if retries <= 0:
+                raise e
+            else:
+                print("download failed, retrying, {} attempt{} left"
+                      .format(retries, 's' if retries > 1 else ''))
     logging.info("downloaded %s into %s successfully", url, fname)
     return fname
 
@@ -1431,10 +1456,10 @@ def get_mnist():
     def read_data(label_url, image_url):
         with gzip.open(mx.test_utils.download(label_url)) as flbl:
             struct.unpack(">II", flbl.read(8))
-            label = np.fromstring(flbl.read(), dtype=np.int8)
+            label = np.frombuffer(flbl.read(), dtype=np.int8)
         with gzip.open(mx.test_utils.download(image_url), 'rb') as fimg:
             _, _, rows, cols = struct.unpack(">IIII", fimg.read(16))
-            image = np.fromstring(fimg.read(), dtype=np.uint8).reshape(len(label), rows, cols)
+            image = np.frombuffer(fimg.read(), dtype=np.uint8).reshape(len(label), rows, cols)
             image = image.reshape(image.shape[0], 1, 28, 28).astype(np.float32)/255
         return (label, image)
 
@@ -1627,16 +1652,20 @@ def discard_stderr():
     with discard_stderr():
         ...
     """
+    with open(os.devnull, 'w') as bit_bucket:
+        try:
+            stderr_fileno = sys.stderr.fileno()
+            old_stderr = os.dup(stderr_fileno)
+            try:
+                os.dup2(bit_bucket.fileno(), stderr_fileno)
+                yield
+            finally:
+                os.dup2(old_stderr, stderr_fileno)
+        except AttributeError:
+            # On some systems is stderr not a file descriptor but actually a virtual pipeline
+            # that can not be copied
+            yield
 
-    try:
-        stderr_fileno = sys.stderr.fileno()
-        old_stderr = os.dup(stderr_fileno)
-        bit_bucket = open(os.devnull, 'w')
-        os.dup2(bit_bucket.fileno(), stderr_fileno)
-        yield
-    finally:
-        os.dup2(old_stderr, stderr_fileno)
-        bit_bucket.close()
 
 class DummyIter(mx.io.DataIter):
     """A dummy iterator that always returns the same batch of data
@@ -1731,6 +1760,36 @@ def mean_check(generator, mu, sigma, nsamples=1000000):
     ret = (sample_mean > mu - 3 * sigma / np.sqrt(nsamples)) and\
           (sample_mean < mu + 3 * sigma / np.sqrt(nsamples))
     return ret
+
+def get_im2rec_path(home_env="MXNET_HOME"):
+    """Get path to the im2rec.py tool
+
+    Parameters
+    ----------
+
+    home_env : str
+        Env variable that holds the path to the MXNET folder
+
+    Returns
+    -------
+    str
+        The path to im2rec.py
+    """
+    # Check first if the path to MXNET is passed as an env variable
+    if home_env in os.environ:
+        mxnet_path = os.environ[home_env]
+    else:
+        # Else use currently imported mxnet as reference
+        mxnet_path = os.path.dirname(mx.__file__)
+    # If MXNet was installed through pip, the location of im2rec.py
+    im2rec_path = os.path.join(mxnet_path, 'tools', 'im2rec.py')
+    if os.path.isfile(im2rec_path):
+        return im2rec_path
+    # If MXNet has been built locally
+    im2rec_path = os.path.join(mxnet_path, '..', '..', 'tools', 'im2rec.py')
+    if os.path.isfile(im2rec_path):
+        return im2rec_path
+    raise IOError('Could not find path to tools/im2rec.py')
 
 def var_check(generator, sigma, nsamples=1000000):
     """Test the generator by matching the variance.

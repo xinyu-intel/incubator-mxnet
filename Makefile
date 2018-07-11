@@ -42,7 +42,7 @@ endif
 CORE_INC = $(wildcard $(DMLC_CORE)/include/*/*.h)
 
 ifndef NNVM_PATH
-	NNVM_PATH = $(TPARTYDIR)/nnvm
+	NNVM_PATH = $(TPARTYDIR)/tvm/nnvm
 endif
 
 ifndef DLPACK_PATH
@@ -66,11 +66,8 @@ $(warning "USE_MKL2017 is deprecated. We will switch to USE_MKLDNN.")
 endif
 
 ifeq ($(USE_MKLDNN), 1)
-	RETURN_STRING := $(shell ./prepare_mkldnn.sh $(MKLDNN_ROOT))
-	LAST_WORD_INDEX := $(words $(RETURN_STRING))
-	# fetch the 2nd last word as MKLDNNROOT
-	MKLDNNROOT := $(word $(shell echo $$(($(LAST_WORD_INDEX) - 1))),$(RETURN_STRING))
-	MKLROOT := $(lastword $(RETURN_STRING))
+	MKLDNNROOT = $(ROOTDIR)/3rdparty/mkldnn/install
+	MKLROOT = $(ROOTDIR)/3rdparty/mkldnn/install
 	export USE_MKLML = 1
 endif
 
@@ -92,7 +89,7 @@ ifeq ($(DEBUG), 1)
 else
 	CFLAGS += -O3 -DNDEBUG=1
 endif
-CFLAGS += -I$(TPARTYDIR)/mshadow/ -I$(TPARTYDIR)/dmlc-core/include -fPIC -I$(NNVM_PATH)/include -I$(DLPACK_PATH)/include -I$(NNVM_PATH)/tvm/include -Iinclude $(MSHADOW_CFLAGS)
+CFLAGS += -I$(TPARTYDIR)/mshadow/ -I$(TPARTYDIR)/dmlc-core/include -fPIC -I$(NNVM_PATH)/include -I$(DLPACK_PATH)/include -I$(TPARTYDIR)/tvm/include -Iinclude $(MSHADOW_CFLAGS)
 LDFLAGS = -pthread $(MSHADOW_LDFLAGS) $(DMLC_LDFLAGS)
 ifeq ($(DEBUG), 1)
 	NVCCFLAGS += -std=c++11 -Xcompiler -D_FORCE_INLINES -g -G -O0 -ccbin $(CXX) $(MSHADOW_NVCCFLAGS)
@@ -155,15 +152,24 @@ endif
 # issue covered with this
 #   -  for Ubuntu 14.04 or lower, lapack is not automatically installed with openblas
 #   -  for Ubuntu, installing atlas will not automatically install the atlas provided lapack library
+#   -  for rhel7.2, try installing the package `lapack-static` via yum will dismiss this warning.
 # silently switching lapack off instead of letting the build fail because of backward compatibility
 ifeq ($(USE_LAPACK), 1)
 ifeq ($(USE_BLAS),$(filter $(USE_BLAS),blas openblas atlas mkl))
-ifeq (,$(wildcard /lib/liblapack.a))
-ifeq (,$(wildcard /usr/lib/liblapack.a))
-ifeq (,$(wildcard /usr/lib64/liblapack.a))
 ifeq (,$(wildcard $(USE_LAPACK_PATH)/liblapack.a))
+ifeq (,$(wildcard $(USE_LAPACK_PATH)/liblapack.so))
+ifeq (,$(wildcard /lib/liblapack.a))
+ifeq (,$(wildcard /lib/liblapack.so))
+ifeq (,$(wildcard /usr/lib/liblapack.a))
+ifeq (,$(wildcard /usr/lib/liblapack.so))
+ifeq (,$(wildcard /usr/lib64/liblapack.a))
+ifeq (,$(wildcard /usr/lib64/liblapack.so))
 	USE_LAPACK = 0
         $(warning "USE_LAPACK disabled because libraries were not found")
+endif
+endif
+endif
+endif
 endif
 endif
 endif
@@ -187,6 +193,30 @@ ifeq ($(USE_CUDNN), 1)
 	LDFLAGS += -lcudnn
 endif
 
+# whether to use F16C instruction set extension for fast fp16 compute on CPU
+# if cross compiling you may want to explicitly turn it off if target system does not support it
+ifndef USE_F16C
+    ifneq ($(OS),Windows_NT)
+        detected_OS := $(shell uname -s)
+        ifeq ($(detected_OS),Darwin)
+            F16C_SUPP = $(shell sysctl -a | grep machdep.cpu.features | grep F16C)
+        endif
+        ifeq ($(detected_OS),Linux)
+            F16C_SUPP = $(shell cat /proc/cpuinfo | grep flags | grep f16c)
+        endif
+	ifneq ($(strip $(F16C_SUPP)),)
+                USE_F16C=1
+        else
+                USE_F16C=0
+        endif
+    endif
+    # if OS is Windows, check if your processor and compiler support F16C architecture.
+    # One way to check if processor supports it is to download the tool
+    # https://docs.microsoft.com/en-us/sysinternals/downloads/coreinfo.
+    # If coreinfo -c shows F16C and compiler supports it,
+    # then you can set USE_F16C=1 explicitly to leverage that capability"
+endif
+
 # gperftools malloc library (tcmalloc)
 ifeq ($(USE_GPERFTOOLS), 1)
 #	FIND_LIBNAME=tcmalloc_and_profiler
@@ -198,7 +228,10 @@ ifeq ($(USE_GPERFTOOLS), 1)
 		ifeq (,$(FIND_LIBFILE))
 			FIND_LIBFILE=$(wildcard /usr/local/lib/lib$(FIND_LIBNAME).$(FIND_LIBFILEEXT))
 			ifeq (,$(FIND_LIBFILE))
-				USE_GPERFTOOLS=0
+				FIND_LIBFILE=$(wildcard /usr/lib64/lib$(FIND_LIBNAME).$(FIND_LIBFILEEXT))
+				ifeq (,$(FIND_LIBFILE))
+					USE_GPERFTOOLS=0
+				endif
 			endif
 		endif
 	endif
@@ -221,7 +254,10 @@ ifneq ($(USE_GPERFTOOLS), 1)
 				ifeq (,$(FIND_LIBFILE))
 					FIND_LIBFILE=$(wildcard /usr/lib/x86_64-linux-gnu/lib$(FIND_LIBNAME).$(FIND_LIBFILEEXT))
 					ifeq (,$(FIND_LIBFILE))
-						USE_JEMALLOC=0
+						FIND_LIBFILE=$(wildcard /usr/lib64/lib$(FIND_LIBNAME).$(FIND_LIBFILEEXT))
+						ifeq (,$(FIND_LIBFILE))
+							USE_JEMALLOC=0
+						endif
 					endif
 				endif
 			endif
@@ -254,8 +290,25 @@ ifneq ($(ADD_LDFLAGS), NONE)
 	LDFLAGS += $(ADD_LDFLAGS)
 endif
 
-ifneq ($(USE_CUDA_PATH), NONE)
-	NVCC=$(USE_CUDA_PATH)/bin/nvcc
+ifeq ($(NVCC), NONE)
+	# If NVCC has not been manually defined, use the CUDA_PATH bin dir.
+	ifneq ($(USE_CUDA_PATH), NONE)
+		NVCC=$(USE_CUDA_PATH)/bin/nvcc
+	endif
+endif
+
+# Guard against displaying nvcc info messages to users not using CUDA.
+ifeq ($(USE_CUDA), 1)
+	# If NVCC is not at the location specified, use CUDA_PATH instead.
+	ifeq ("$(wildcard $(NVCC))","")
+		ifneq ($(USE_CUDA_PATH), NONE)
+			NVCC=$(USE_CUDA_PATH)/bin/nvcc
+$(info INFO: nvcc was not found on your path)
+$(info INFO: Using $(NVCC) as nvcc path)
+		else
+$(warning WARNING: could not find nvcc compiler, the specified path was: $(NVCC))
+		endif
+	endif
 endif
 
 # Sets 'CUDA_ARCH', which determines the GPU architectures supported
@@ -386,11 +439,11 @@ endif
 # For quick compile test, used smaller subset
 ALLX_DEP= $(ALL_DEP)
 
-build/src/%.o: src/%.cc
+build/src/%.o: src/%.cc | mkldnn
 	@mkdir -p $(@D)
 	$(CXX) -std=c++11 -c $(CFLAGS) -MMD -c $< -o $@
 
-build/src/%_gpu.o: src/%.cu
+build/src/%_gpu.o: src/%.cu | mkldnn
 	@mkdir -p $(@D)
 	$(NVCC) $(NVCCFLAGS) $(CUDA_ARCH) -Xcompiler "$(CFLAGS)" -M -MT build/src/$*_gpu.o $< >build/src/$*_gpu.d
 	$(NVCC) -c -o $@ $(NVCCFLAGS) $(CUDA_ARCH) -Xcompiler "$(CFLAGS)" $<
@@ -436,7 +489,7 @@ endif
 $(PS_PATH)/build/libps.a: PSLITE
 
 PSLITE:
-	$(MAKE) CXX=$(CXX) DEPS_PATH=$(DEPS_PATH) -C $(PS_PATH) ps
+	$(MAKE) CXX="$(CXX)" DEPS_PATH="$(DEPS_PATH)" -C $(PS_PATH) ps
 
 $(DMLC_CORE)/libdmlc.a: DMLCCORE
 
@@ -459,6 +512,7 @@ ifeq ($(USE_CPP_PACKAGE), 1)
 include cpp-package/cpp-package.mk
 endif
 
+include mkldnn.mk
 include tests/cpp/unittest.mk
 
 extra-packages: $(EXTRA_PACKAGES)
@@ -510,7 +564,7 @@ rpkg:
 	mkdir -p R-package/inst/include
 	cp -rf include/* R-package/inst/include
 	cp -rf 3rdparty/dmlc-core/include/* R-package/inst/include/
-	cp -rf 3rdparty/nnvm/include/* R-package/inst/include
+	cp -rf 3rdparty/tvm/nnvm/include/* R-package/inst/include
 	Rscript -e "if(!require(devtools)){install.packages('devtools', repo = 'https://cloud.r-project.org/')}"
 	Rscript -e "library(devtools); library(methods); options(repos=c(CRAN='https://cloud.r-project.org/')); install_deps(pkg='R-package', dependencies = TRUE)"
 	echo "import(Rcpp)" > R-package/NAMESPACE
@@ -571,10 +625,9 @@ clean: cyclean $(EXTRA_PACKAGES_CLEAN)
 	$(RM) -r  $(patsubst %, %/*.d, $(EXTRA_OPERATORS)) $(patsubst %, %/*/*.d, $(EXTRA_OPERATORS))
 	$(RM) -r  $(patsubst %, %/*.o, $(EXTRA_OPERATORS)) $(patsubst %, %/*/*.o, $(EXTRA_OPERATORS))
 else
-clean: cyclean testclean $(EXTRA_PACKAGES_CLEAN)
+clean: mkldnn_clean cyclean testclean $(EXTRA_PACKAGES_CLEAN)
 	$(RM) -r build lib bin *~ */*~ */*/*~ */*/*/*~ R-package/NAMESPACE R-package/man R-package/R/mxnet_generated.R \
-		R-package/inst R-package/src/image_recordio.h R-package/src/*.o R-package/src/*.so mxnet_*.tar.gz \
-		3rdparty/mkldnn/install/*
+		R-package/inst R-package/src/image_recordio.h R-package/src/*.o R-package/src/*.so mxnet_*.tar.gz
 	cd $(DMLC_CORE); $(MAKE) clean; cd -
 	cd $(PS_PATH); $(MAKE) clean; cd -
 	cd $(NNVM_PATH); $(MAKE) clean; cd -

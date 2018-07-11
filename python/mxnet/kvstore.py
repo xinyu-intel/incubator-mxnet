@@ -83,6 +83,14 @@ def _updater_wrapper(updater):
         updater(key, lhs, rhs)
     return updater_handle
 
+def _get_kvstore_server_command_type(command):
+    command_types = {'kController': 0,
+                     'kSetMultiPrecision': 1,
+                     'kStopServer': 2,
+                     'kSyncMode': 3,
+                     'kSetGradientCompression': 4}
+    assert (command in command_types), "Unknown command type to send to server"
+    return command_types[command]
 
 class KVStore(object):
     """A key-value store for synchronization of values, over multiple devices."""
@@ -227,7 +235,7 @@ class KVStore(object):
                 self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
 
 
-    def pull(self, key, out=None, priority=0):
+    def pull(self, key, out=None, priority=0, ignore_sparse=True):
         """ Pulls a single value or a sequence of values from the store.
 
         This function returns immediately after adding an operator to the engine.
@@ -239,8 +247,8 @@ class KVStore(object):
 
         The returned values are guaranteed to be the latest values in the store.
 
-        For `RowSparseNDArray` values, this call is ignored,
-        please use ``row_sparse_pull`` instead.
+        pull with `RowSparseNDArray` is not supported for dist kvstore.
+        Please use ``row_sparse_pull`` instead.
 
         Parameters
         ----------
@@ -254,6 +262,9 @@ class KVStore(object):
             The priority of the pull operation.
             Higher priority pull operations are likely to be executed before
             other pull actions.
+
+        ignore_sparse: bool, optional, default True
+            Whether to ignore sparse arrays in the request.
 
         Examples
         --------
@@ -290,11 +301,13 @@ class KVStore(object):
         assert(out is not None)
         ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
         if use_str_keys:
-            check_call(_LIB.MXKVStorePullEx(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            check_call(_LIB.MXKVStorePullWithSparseEx(self.handle, mx_uint(len(ckeys)), ckeys,
+                                                      cvals, ctypes.c_int(priority),
+                                                      ctypes.c_bool(ignore_sparse)))
         else:
-            check_call(_LIB.MXKVStorePull(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            check_call(_LIB.MXKVStorePullWithSparse(self.handle, mx_uint(len(ckeys)), ckeys,
+                                                    cvals, ctypes.c_int(priority),
+                                                    ctypes.c_bool(ignore_sparse)))
 
     def row_sparse_pull(self, key, out=None, priority=0, row_ids=None):
         """ Pulls a single RowSparseNDArray value or a sequence of RowSparseNDArray values \
@@ -473,7 +486,11 @@ class KVStore(object):
                 optim_str = py_str(pickle.dumps(optimizer, 0))
             except:
                 raise
-            self._send_command_to_servers(0, optim_str)
+            cmd = _get_kvstore_server_command_type('kController')
+            self._send_command_to_servers(cmd, optim_str)
+            if optimizer.multi_precision:
+                cmd = _get_kvstore_server_command_type('kSetMultiPrecision')
+                self._send_command_to_servers(cmd, '')
         else:
             self._set_updater(opt.get_updater(optimizer))
 

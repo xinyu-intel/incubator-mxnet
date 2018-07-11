@@ -19,7 +19,7 @@ import pickle as pkl
 
 from mxnet.ndarray import NDArray
 from mxnet.test_utils import *
-from common import setup_module, with_seed, random_seed
+from common import setup_module, with_seed, random_seed, teardown
 from mxnet.base import mx_real_t
 from numpy.testing import assert_allclose
 import numpy.random as rnd
@@ -156,6 +156,23 @@ def test_sparse_nd_slice():
 
 
 @with_seed()
+def test_sparse_nd_concat():
+    def check_concat(arrays):
+        ret = np.concatenate([arr.asnumpy() for arr in arrays], axis=0)
+        same(mx.nd.concat(*arrays, dim=0).asnumpy(), ret)
+    nds = []
+    zero_nds = []
+    ncols = rnd.randint(2, 10)
+    for i in range(3):
+        shape = (rnd.randint(2, 10), ncols)
+        A, _ = rand_sparse_ndarray(shape, 'csr')
+        nds.append(A)
+        zero_nds.append(mx.nd.zeros(shape).tostype('csr'))
+    check_concat(nds)
+    check_concat(zero_nds)
+
+
+@with_seed()
 def test_sparse_nd_equal():
     for stype in ['row_sparse', 'csr']:
         shape = rand_shape_2d()
@@ -261,6 +278,7 @@ def test_sparse_nd_binary():
             lhs_nd = mx.nd.array(lhs).tostype(stype)
             rhs_nd = mx.nd.array(rhs).tostype(stype)
             assert_allclose(fn(lhs, rhs), fn(lhs_nd, rhs_nd).asnumpy(), rtol=1e-4, atol=1e-4)
+            assert_allclose(fn(lhs, lhs), fn(lhs_nd, lhs_nd).asnumpy(), rtol=1e-4, atol=1e-4)
 
     stypes = ['row_sparse', 'csr']
     for stype in stypes:
@@ -638,6 +656,17 @@ def test_create_row_sparse():
         rsp_copy = mx.nd.array(rsp_created)
         assert(same(rsp_copy.asnumpy(), rsp_created.asnumpy()))
 
+        # add this test since we added np.int32 and np.int64 to integer_types
+        if len(shape) == 2:
+            for np_int_type in (np.int32, np.int64):
+                shape = list(shape)
+                shape = [np_int_type(x) for x in shape]
+                arg1 = tuple(shape)
+                mx.nd.sparse.row_sparse_array(arg1, tuple(shape))
+                shape[0] += 1
+                assert_exception(mx.nd.sparse.row_sparse_array, ValueError, arg1, tuple(shape))
+
+
 
 @with_seed()
 def test_create_sparse_nd_infer_shape():
@@ -827,23 +856,22 @@ def test_sparse_nd_fluent():
             else:
                 assert almost_equal(regular.asnumpy(), fluent.asnumpy(), equal_nan=equal_nan)
 
-    common_func = ['zeros_like', 'square']
-    rsp_func = ['round', 'rint', 'fix', 'floor', 'ceil', 'trunc',
-                'abs', 'sign', 'sin', 'degrees', 'radians', 'expm1']
-    for func in common_func:
+    all_funcs = ['zeros_like', 'square', 'round', 'rint', 'fix', 'floor', 'ceil', 'trunc',
+                 'abs', 'sign', 'sin', 'degrees', 'radians', 'expm1']
+    for func in all_funcs:
         check_fluent_regular('csr', func, {})
-    for func in common_func + rsp_func:
         check_fluent_regular('row_sparse', func, {})
 
-    rsp_func = ['arcsin', 'arctan', 'tan', 'sinh', 'tanh',
+    all_funcs = ['arcsin', 'arctan', 'tan', 'sinh', 'tanh',
                 'arcsinh', 'arctanh', 'log1p', 'sqrt', 'relu']
-    for func in rsp_func:
+    for func in all_funcs:
+        check_fluent_regular('csr', func, {}, equal_nan=True)
         check_fluent_regular('row_sparse', func, {}, equal_nan=True)
 
     check_fluent_regular('csr', 'slice', {'begin': (2, 5), 'end': (4, 7)}, shape=(5, 17))
     check_fluent_regular('row_sparse', 'clip', {'a_min': -0.25, 'a_max': 0.75})
 
-    for func in ['sum', 'mean']:
+    for func in ['sum', 'mean', 'norm']:
         check_fluent_regular('csr', func, {'axis': 0})
 
 
@@ -906,18 +934,22 @@ def test_sparse_nd_check_format():
 
 @with_seed()
 def test_sparse_nd_norm():
-    def check_sparse_nd_norm(stype, shape, density):
+    def check_sparse_nd_norm(stype, shape, density, **kwargs):
         data, _ = rand_sparse_ndarray(shape, stype, density)
-        norm = data.norm()
-        expected_norm = np.linalg.norm(data.asnumpy())
-        assert_almost_equal(norm.asnumpy(), expected_norm)
+        norm = data.norm(**kwargs)
+        expected_norm = data.tostype('default').norm(**kwargs)
+        assert_almost_equal(norm.asnumpy(), expected_norm.asnumpy())
 
     shape = (5, 5)
     stypes = ['row_sparse', 'csr']
-    densities = [0, 0.5]
+    densities = [0, 0.5, 1]
     for stype in stypes:
         for density in densities:
-            check_sparse_nd_norm(stype, shape, density)
+           check_sparse_nd_norm(stype, shape, density, axis=None, keepdims=False, ord=2)
+
+    # test fallback
+    check_sparse_nd_norm(stype, shape, density, axis=0, keepdims=False, ord=2)
+    check_sparse_nd_norm(stype, shape, density, axis=None, keepdims=True, ord=2)
 
 @with_seed()
 def test_sparse_fc():

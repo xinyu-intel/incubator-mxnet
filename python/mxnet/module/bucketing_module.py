@@ -412,13 +412,24 @@ class BucketingModule(BaseModule):
 
         self.optimizer_initialized = True
 
-    def prepare(self, data_batch):
-        """Prepares a data batch for forward.
+    def prepare(self, data_batch, sparse_row_id_fn=None):
+        '''Prepares the module for processing a data batch.
+
+        Usually involves switching bucket and reshaping.
+        For modules that contain `row_sparse` parameters in KVStore,
+        it prepares the `row_sparse` parameters based on the sparse_row_id_fn.
 
         Parameters
         ----------
         data_batch : DataBatch
-        """
+            The current batch of data for forward computation.
+
+        sparse_row_id_fn : A callback function
+            The function  takes `data_batch` as an input and returns a dict of
+            str -> NDArray. The resulting dict is used for pulling row_sparse
+            parameters from the kvstore, where the str key is the name of the param,
+            and the value is the row id of the param to pull.
+        '''
         # perform bind if haven't done so
         assert self.binded and self.params_initialized
         bucket_key = data_batch.bucket_key
@@ -426,6 +437,7 @@ class BucketingModule(BaseModule):
         data_shapes = data_batch.provide_data
         label_shapes = data_batch.provide_label
         self.switch_bucket(bucket_key, data_shapes, label_shapes)
+        self._curr_module.prepare(data_batch, sparse_row_id_fn=sparse_row_id_fn)
         # switch back
         self.switch_bucket(original_bucket_key, None, None)
 
@@ -451,6 +463,13 @@ class BucketingModule(BaseModule):
     def update(self):
         """Updates parameters according to installed optimizer and the gradient computed
         in the previous forward-backward cycle.
+
+        When KVStore is used to update parameters for multi-device or multi-machine training,
+        a copy of the parameters are stored in KVStore. Note that for `row_sparse` parameters,
+        this function does update the copy of parameters in KVStore, but doesn't broadcast the
+        updated parameters to all devices / machines. Please call `prepare` to broadcast
+        `row_sparse` parameters with the next batch of data.
+
         """
         assert self.binded and self.params_initialized and self.optimizer_initialized
         self._params_dirty = True
@@ -498,7 +517,7 @@ class BucketingModule(BaseModule):
         assert self.binded and self.params_initialized and self.inputs_need_grad
         return self._curr_module.get_input_grads(merge_multi_context=merge_multi_context)
 
-    def update_metric(self, eval_metric, labels):
+    def update_metric(self, eval_metric, labels, pre_sliced=False):
         """Evaluates and accumulates evaluation metric on outputs of the last forward computation.
 
         Parameters
@@ -508,7 +527,7 @@ class BucketingModule(BaseModule):
             Typically ``data_batch.label``.
         """
         assert self.binded and self.params_initialized
-        self._curr_module.update_metric(eval_metric, labels)
+        self._curr_module.update_metric(eval_metric, labels, pre_sliced)
 
     @property
     def symbol(self):

@@ -191,6 +191,8 @@ Composite multiple symbols into a new one by an operator.
     :nosignatures:
 
     Symbol.astype
+    Symbol.shape_array
+    Symbol.size_array
     Symbol.reshape
     Symbol.reshape_like
     Symbol.flatten
@@ -287,9 +289,12 @@ Composite multiple symbols into a new one by an operator.
 
     Symbol.slice
     Symbol.slice_axis
+    Symbol.slice_like
     Symbol.take
     Symbol.one_hot
     Symbol.pick
+    Symbol.ravel_multi_index
+    Symbol.unravel_index
 ```
 
 ### Get internal and output symbol
@@ -370,6 +375,8 @@ Composite multiple symbols into a new one by an operator.
     :nosignatures:
 
     cast
+    shape_array
+    size_array
     reshape
     reshape_like
     flatten
@@ -419,6 +426,7 @@ Composite multiple symbols into a new one by an operator.
 
     slice
     slice_axis
+    slice_like
     take
     batch_take
     one_hot
@@ -552,6 +560,18 @@ Composite multiple symbols into a new one by an operator.
     broadcast_lesser_equal
 ```
 
+### Logical
+
+```eval_rst
+.. autosummary::
+    :nosignatures:
+
+    broadcast_logical_and
+    broadcast_logical_or
+    broadcast_logical_xor
+    broadcast_logical_not
+```
+
 ### Random sampling
 
 ```eval_rst
@@ -565,6 +585,8 @@ Composite multiple symbols into a new one by an operator.
     mxnet.symbol.random.poisson
     mxnet.symbol.random.negative_binomial
     mxnet.symbol.random.generalized_negative_binomial
+    mxnet.symbol.random.multinomial
+    mxnet.symbol.random.shuffle
     mxnet.random.seed
 ```
 

@@ -22,14 +22,16 @@
  * \file shuffle_op.cc
  * \brief Operator to shuffle elements of an NDArray
  */
-#if (__GNUC__ > 4 && !defined(__clang__major__)) || (__clang_major__ > 4 && __linux__)
-  #define USE_GNU_PARALLEL_SHUFFLE
+#if !defined (__ANDROID__) && ((__GNUC__ > 4 &&\
+    !defined(__clang__major__)) || (__clang_major__ > 4 && __linux__))
+        #define USE_GNU_PARALLEL_SHUFFLE
 #endif
 
 #include <mxnet/operator_util.h>
 #include <algorithm>
 #include <random>
 #include <vector>
+#include <cstring>
 #ifdef USE_GNU_PARALLEL_SHUFFLE
   #include <parallel/algorithm>
 #endif
@@ -55,18 +57,24 @@ void Shuffle1D(DType* const out, const index_t size, Rand* const prnd) {
 
 template<typename DType, typename Rand>
 void ShuffleND(DType* const out, const index_t size, const index_t first_axis_len,
-                Rand* const prnd) {
+                Rand* const prnd, const OpContext& ctx) {
   // Fisher-Yates shuffling
+  using namespace mxnet_op;
   const index_t stride = size / first_axis_len;
   auto rand_n = [prnd](index_t n) {
     std::uniform_int_distribution<index_t> dist(0, n - 1);
     return dist(*prnd);
   };
   CHECK_GT(first_axis_len, 0U);
+  const size_t stride_bytes = sizeof(DType) * stride;
+  Tensor<cpu, 1, char> buf =
+    ctx.requested[1].get_space_typed<cpu, 1, char>(Shape1(stride_bytes), ctx.get_stream<cpu>());
   for (index_t i = first_axis_len - 1; i > 0; --i) {
     const index_t j = rand_n(i + 1);
     if (i != j) {
-      std::swap_ranges(out + stride * i, out + stride * (i + 1), out + stride * j);
+      std::memcpy(buf.dptr_, out + stride * i, stride_bytes);
+      std::memcpy(out + stride * i, out + stride * j, stride_bytes);
+      std::memcpy(out + stride * j, buf.dptr_, stride_bytes);
     }
   }
 }
@@ -97,7 +105,7 @@ void ShuffleForwardCPU(const nnvm::NodeAttrs& attrs,
     if (input_shape.ndim() == 1) {
       Shuffle1D(out.dptr_, size, &prnd);
     } else {
-      ShuffleND(out.dptr_, size, first_axis_len, &prnd);
+      ShuffleND(out.dptr_, size, first_axis_len, &prnd, ctx);
     }
   });
 }

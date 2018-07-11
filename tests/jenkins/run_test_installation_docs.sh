@@ -262,29 +262,52 @@ LINUX_PYTHON_CPU_END_LINENO=$(grep -n "END - Linux Python CPU Installation Instr
 
 set_instruction_set ${LINUX_PYTHON_CPU_START_LINENO} ${LINUX_PYTHON_CPU_END_LINENO}
 
-echo
-echo "### Testing Virtualenv ###"
-echo "${virtualenv_commands}"
-echo
-docker run --rm ubuntu:14.04 bash -c "${virtualenv_commands}"
+ubuntu_python_cpu_virtualenv()
+{
+    set -e
+    echo
+    echo "### Testing Virtualenv ###"
+    echo "${virtualenv_commands}" #> "$filewithcommands"
+    echo
+    eval ${virtualenv_commands}
+    echo "ubuntu_python_cpu_virtualenv: MXNet Installed Successfully"
+}
 
-echo
-echo "### Testing Pip ###"
-echo "${pip_commands}"
-echo
-docker run --rm ubuntu:14.04 bash -c "${pip_commands}"
+ubuntu_python_cpu_pip()
+{
+    set -e
+    echo
+    echo "### Testing Pip ###"
+    pip_commands="sudo ${pip_commands}"
+    echo "${pip_commands}"
+    echo
+    eval ${pip_commands}
+    echo "ubuntu_python_cpu_pip: MXNet Installed Successfully"
+}
 
-echo
-echo "### Testing Docker ###"
-echo "${docker_commands}"
-echo
-eval ${docker_commands}
+ubuntu_python_cpu_docker()
+{
+    set -e
+    echo
+    echo "### Testing Docker ###"
+    echo "${docker_commands}"
+    echo
+    eval ${docker_commands}
+    echo "ubuntu_python_cpu_docker: MXNet Installed Successfully"
 
-echo
-echo "### Testing Build From Source ###"
-echo "${buildfromsource_commands}"
-echo
-docker run --rm ubuntu:14.04 bash -c "${buildfromsource_commands}"
+}
+
+ubuntu_python_cpu_source()
+{
+    set -e
+    echo
+    echo "### Testing Build From Source ###"
+    echo "${buildfromsource_commands}"
+    echo
+    eval ${buildfromsource_commands}
+    echo "ubuntu_python_cpu_source: MXNet Installed Successfully"
+
+}
 
 #########################LINUX-PYTHON-GPU###########################
 
@@ -298,26 +321,56 @@ LINUX_PYTHON_GPU_END_LINENO=$(grep -n "END - Linux Python GPU Installation Instr
 
 set_instruction_set ${LINUX_PYTHON_GPU_START_LINENO} ${LINUX_PYTHON_GPU_END_LINENO}
 
-echo
-echo "### Testing Virtualenv ###"
-echo "${virtualenv_commands}"
-echo
-nvidia-docker run --rm nvidia/cuda:7.5-cudnn5-devel bash -c "${virtualenv_commands}"
 
-echo
-echo "### Testing Pip ###"
-echo "${pip_commands}"
-echo
-nvidia-docker run --rm nvidia/cuda:7.5-cudnn5-devel bash -c "${pip_commands}"
+ubuntu_python_gpu_virtualenv()
+{
+    set -e
+    echo
+    echo "### Testing Virtualenv ###"
+    echo "${virtualenv_commands}"
+    echo
+    eval ${virtualenv_commands}
+    echo "ubuntu_python_gpu_virtualenv: MXNet Installed Successfully"
 
-echo
-echo "### Testing Docker ###"
-echo "${docker_commands}"
-echo
-eval ${docker_commands}
+}
 
-echo
-echo "### Testing Build From Source ###"
-echo "${buildfromsource_commands}"
-echo
-nvidia-docker run --rm nvidia/cuda:7.5-cudnn5-devel bash -c "${buildfromsource_commands}"
+ubuntu_python_gpu_pip()
+{
+    set -e
+    echo
+    echo "### Testing Pip ###"
+    echo "${pip_commands}"
+    echo
+    eval ${pip_commands}
+    echo "ubuntu_python_gpu_pip: MXNet Installed Successfully"
+
+}
+
+ubuntu_python_gpu_docker()
+{
+    set -e
+    echo
+    echo "### Testing Docker ###"
+    echo "${docker_commands}"
+    echo
+    eval ${docker_commands}
+    echo "ubuntu_python_gpu_docker: MXNet Installed Successfully"
+
+}
+
+ubuntu_python_gpu_source()
+{
+    set -e
+    echo
+    echo "### Testing Build From Source ###"
+    echo "${buildfromsource_commands}"
+    echo
+    eval ${buildfromsource_commands}
+    echo "ubuntu_python_gpu_source: MXNet Installed Successfully"
+
+}
+
+func_virtual_commands()
+{
+  echo ${virtualenv_commands}
+}
