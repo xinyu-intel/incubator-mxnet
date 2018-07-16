@@ -1246,5 +1246,4 @@ TEST(MKLDNN_BASE, CreateMKLDNNMem) {
   }
 }
 
->>>>>>> master
 #endif
