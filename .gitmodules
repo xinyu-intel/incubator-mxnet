@@ -1,6 +1,7 @@
 [submodule "3rdparty/mshadow"]
 	path = 3rdparty/mshadow
-	url = https://github.com/dmlc/mshadow.git
+	url = https://github.com/xinyu-intel/mshadow.git
+	branch = teamforge
 [submodule "3rdparty/dmlc-core"]
 	path = 3rdparty/dmlc-core
 	url = https://github.com/dmlc/dmlc-core.git
@@ -26,3 +27,7 @@
 [submodule "3rdparty/tvm"]
 	path = 3rdparty/tvm
 	url = https://github.com/dmlc/tvm
+[submodule "3rdparty/sockeye"]
+	path = 3rdparty/sockeye
+	url = https://github.com/xinyu-intel/sockeye
+	branch = teamforge

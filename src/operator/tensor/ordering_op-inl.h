@@ -383,7 +383,7 @@ void TopKImpl(RunContext ctx,
   if (do_transpose) {
     sorted_dat = reshape(transpose(dat, Shape3(0, 2, 1)), Shape1(src.Size()));
   } else {
-    sorted_dat = reshape(dat, Shape1(src.Size()));
+    sorted_dat = src.FlatTo1D<xpu, real_t>(s);
   }
   mxnet_op::Kernel<range_fwd, xpu>::Launch(s, batch_size * element_num, 1, 0, 1,
     kWriteTo, indices.dptr_);
@@ -444,7 +444,6 @@ void TopKImpl(RunContext ctx,
                       inplace_reshape(indices, Shape2(batch_size, element_num)), 0, k));
     }
   } else {
-    indices = F<mshadow_op::mod>(indices, element_num);
     if (do_transpose) {
       Tensor<xpu, 3, real_t> ret_value = ret[0].FlatTo3D<xpu, real_t>(axis, axis, s);
       Tensor<xpu, 3, real_t> ret_indices = ret[1].FlatTo3D<xpu, real_t>(axis, axis, s);
@@ -460,6 +459,7 @@ void TopKImpl(RunContext ctx,
                                                       element_num)),
                                0, k),
                       Shape3(0, 2, 1)));
+      ret_indices = F<mshadow_op::mod>(ret_indices, element_num);
     } else {
       Tensor<xpu, 2, real_t> ret_value =
         ret[0].get_with_shape<xpu, 2, real_t>(Shape2(batch_size, k), s);
@@ -468,6 +468,7 @@ void TopKImpl(RunContext ctx,
       ret_value = slice<1>(inplace_reshape(sorted_dat, Shape2(batch_size, element_num)), 0, k);
       ret_indices = tcast<real_t>(slice<1>(
                       inplace_reshape(indices, Shape2(batch_size, element_num)), 0, k));
+      ret_indices = F<mshadow_op::mod>(ret_indices, element_num);
     }
   }
 }
