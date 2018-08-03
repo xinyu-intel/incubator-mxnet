@@ -755,6 +755,38 @@ inline bool TakeOpType(const nnvm::NodeAttrs& attrs,
   return (*in_attrs)[0] != -1;
 }
 
+template<typename DType, typename IType>
+MSHADOW_XINLINE static void MapTake(int N, DType* out_data, const DType* in_data,
+                const IType* idx, const int M, const int K) {
+  if(N%M==0)
+  {
+    #pragma omp parallel for if (N > 2000)
+    for(int i=0; i<N/M; i++)
+    {
+      int j = static_cast<int>(idx[i]);
+      if (j <= 0) j = 0;
+      else if (j >= K) j = K - 1;
+      const int jM = j*M;
+      const int iM = i*M;
+      for(int k=0; k<M; k++)
+      {
+        out_data[iM + k] = in_data[jM + k];
+      }
+    }
+  }
+  else
+  {
+    #pragma omp parallel for if (N > 2000)
+    for(int i=0; i<N; i++)
+    {
+      int j = static_cast<int>(idx[i/M]);
+      if (j <= 0) j = 0;
+      else if (j >= K) j = K - 1;
+      out_data[i] = in_data[j * M + i % M];
+    }
+  }
+}
+
 template<typename xpu>
 void TakeOpForward(const nnvm::NodeAttrs& attrs,
                    const OpContext& ctx,
@@ -778,11 +810,19 @@ void TakeOpForward(const nnvm::NodeAttrs& attrs,
     MSHADOW_TYPE_SWITCH(inputs[1].type_flag_, IType, {  // index data type
       if (actual_axis == 0) {
         if (param.mode == take_::kClip) {
+/*
           Kernel<Take<true>, xpu>::Launch(s, oshape.Size(),
                                           outputs[take_::kOut].dptr<DType>(),
                                           inputs[take_::kArr].dptr<DType>(),
                                           inputs[take_::kIdx].dptr<IType>(),
                                           oshape.Size()/idxshape.Size(), arrshape[0]);
+*/
+         
+          MapTake<DType,IType>(oshape.Size(),
+                        outputs[take_::kOut].dptr<DType>(),
+                        inputs[take_::kArr].dptr<DType>(),
+                        inputs[take_::kIdx].dptr<IType>(),
+                        oshape.Size()/idxshape.Size(), arrshape[0]);
         } else {
           Kernel<Take<false>, xpu>::Launch(s, oshape.Size(),
                                            outputs[take_::kOut].dptr<DType>(),

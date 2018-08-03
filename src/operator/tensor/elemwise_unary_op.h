@@ -35,6 +35,10 @@
 #include "../elemwise_op_common.h"
 #include "../../ndarray/ndarray_function.h"
 
+
+#if MSHADOW_USE_MKL == 1
+#include "mkl.h"
+#endif
 namespace mxnet {
 namespace op {
 
@@ -229,6 +233,40 @@ class UnaryOp : public OpBase {
     }
   }
 
+#if MSHADOW_USE_MKL == 1
+  template<typename xpu, typename OP>
+  static void LogCompute(const nnvm::NodeAttrs& attrs,
+            const OpContext& ctx,
+            const std::vector<TBlob>& inputs,
+            const std::vector<OpReqType>& req,
+            const std::vector<TBlob>& outputs) {
+    //TODO: support double
+    if(outputs[0].type_flag_ != mshadow::kFloat32 || req[0] == kAddTo)
+    {
+      //fall back, mkl doen't support addTo
+      Compute<xpu,OP>(attrs, ctx, inputs, req, outputs);
+      return;
+    }
+    
+    float *pOut = outputs[0].dptr<float>();
+    float *pIn = inputs[0].dptr<float>();
+    size_t N = inputs[0].Size();
+    if(req[0] != kNullOp)
+    {
+      if (N < 40)
+      {
+        for (size_t i = 0; i < N; ++i) {
+            *pOut++ = math::log(*pIn++);
+        }
+      }
+      else
+      {
+        vsLn(N, pIn, pOut);
+      }
+    }
+  }
+#endif
+
   template<typename xpu, typename OP>
   static void Compute(const nnvm::NodeAttrs& attrs,
                       const OpContext& ctx,
@@ -386,6 +424,19 @@ void CastCompute(const nnvm::NodeAttrs& attrs,
       Assign(out, req[0], tcast<DstDType>(data));
     });
   });
+
+#if MXNET_USE_MKLDNN == 1
+  using namespace mshadow;
+  using namespace mshadow::expr;
+  Tensor<xpu, 1, float> out = outputs[0].FlatTo1D<xpu, float>(s);
+  Tensor<xpu, 1, int32_t> data = inputs[0].FlatTo1D<xpu, int32_t>(s);
+
+  size_t castSize = data.MSize();
+  for(int i=0; i<castSize; i++)
+  {
+    out[i] = static_cast<float>(data[i]);
+  }
+#endif
 }
 
 struct HardSigmoidParam : public dmlc::Parameter<HardSigmoidParam> {
