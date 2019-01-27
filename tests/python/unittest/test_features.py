@@ -15,20 +15,26 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# pylint: disable=missing-docstring
-from __future__ import print_function
+import mxnet as mx
+import sys
+from mxnet.mxfeatures import *
+from mxnet.base import MXNetError
+from nose.tools import *
 
-import os
-import numpy as np
-from sklearn.datasets import fetch_mldata
+def test_runtime_features():
+    for f in Feature:
+        res = has_feature(f.value)
+        ok_(type(res) is bool)
+    for f in features_enabled():
+        ok_(type(f) is Feature)
+    ok_(type(features_enabled_str()) is str)
+    print("Features enabled: {}".format(features_enabled_str()))
+
+@raises(MXNetError)
+def test_has_feature_2large():
+    has_feature(sys.maxsize)
 
 
-def get_mnist():
-    np.random.seed(1234) # set seed for deterministic ordering
-    data_path = os.path.dirname(os.path.abspath(os.path.expanduser(__file__)))
-    data_path = os.path.join(data_path, '../../data')
-    mnist = fetch_mldata('MNIST original', data_home=data_path)
-    p = np.random.permutation(mnist.data.shape[0])
-    X = mnist.data[p].astype(np.float32)*0.02
-    Y = mnist.target[p]
-    return X, Y
+if __name__ == "__main__":
+    import nose
+    nose.runmodule()
