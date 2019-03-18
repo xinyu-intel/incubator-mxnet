@@ -48,7 +48,8 @@ class SgMKLDNNConvPostQuantizeSelector : public SubgraphSelector {
   SgMKLDNNConvPostQuantizeSelector() {}
 
   bool Select(const nnvm::Node &n) override {
-    if (n.op() && n.op()->name == "_sg_mkldnn_conv") {
+    if ((!disable_all) && n.op() && (n.op()->name == "_sg_mkldnn_conv" || n.op()->name == "_contrib_quantized_sum" )) {
+      if(n.op()->name == "_sg_mkldnn_conv") {
       auto const &param = nnvm::get<MKLDNNConvFusionParam>(n.attrs.parsed);
       if (param.full_conv_param.mkldnn_param.quantized) {
         status = kStart;
@@ -56,6 +57,13 @@ class SgMKLDNNConvPostQuantizeSelector : public SubgraphSelector {
         matched_list.push_back(&n);
         return true;
       }
+      } else if (n.op()->name == "_contrib_quantized_sum"){
+    LOG(INFO) << "find _contrib_quantized_sum";
+      status = kStart;
+      matched_list.clear();
+      matched_list.push_back(&n);
+      return true;
+    }
     }
     return false;
   }
@@ -65,6 +73,7 @@ class SgMKLDNNConvPostQuantizeSelector : public SubgraphSelector {
   }
 
   bool SelectOutput(const nnvm::Node &n, const nnvm::Node &new_node) override {
+    
     if (status == kFail || status == kSuccess || new_node.is_variable())
       return false;
     // If n isn't the last matched node, then we encoutered a internal
@@ -73,14 +82,24 @@ class SgMKLDNNConvPostQuantizeSelector : public SubgraphSelector {
       status = kFail;
       return false;
     }
+  if (n.op()->name == "_contrib_quantized_sum") {
+  LOG(INFO) << "find SelectOutput 1";
+  LOG(INFO) << "new_node.op()->name " <<new_node.op()->name;
+    }
     if (new_node.op()->name == "_contrib_requantize") {
       auto const &param = nnvm::get<RequantizeParam>(new_node.attrs.parsed);
       if (param.min_calib_range.has_value() &&
           param.max_calib_range.has_value()) {
+      if (n.op()->name == "_contrib_quantized_sum") 
+        LOG(INFO) << "find SelectOutput 2";
         matched_list.push_back(&new_node);
         status = kSuccess;
         return true;
       } else {
+      
+    if (n.op()->name == "_contrib_quantized_sum") {
+      LOG(INFO) << "find SelectOutput 3";
+      }
         status = kFail;
       }
     }
@@ -116,7 +135,7 @@ class SgMKLDNNConvPostQuantizeProperty : public SubgraphProperty {
     DFSVisit(sym.outputs, [&](const nnvm::NodePtr &node) {
       if (node->is_variable()) return;
       auto &op_name = node->op()->name;
-      if (op_name == "_sg_mkldnn_conv") {
+      if (op_name == "_sg_mkldnn_conv"||op_name == "_contrib_quantized_sum") {
         conv_node = node;
       } else if (op_name == "_contrib_requantize") {
         requantize_node = node;
@@ -128,6 +147,11 @@ class SgMKLDNNConvPostQuantizeProperty : public SubgraphProperty {
         nnvm::get<RequantizeParam>(requantize_node->attrs.parsed);
     CHECK(requantize_param.min_calib_range.has_value());
     CHECK(requantize_param.max_calib_range.has_value());
+  if(conv_node->op()->name == "_contrib_quantized_sum") {
+      LOG(INFO)<<"requantize_node for sum min "<<requantize_param.min_calib_range.value()
+      <<" max "<<requantize_param.max_calib_range.value();
+//    return conv_node;
+  }
     conv_node->attrs.dict["min_calib_range"] =
         std::to_string(requantize_param.min_calib_range.value());
     conv_node->attrs.dict["max_calib_range"] =
@@ -155,4 +179,8 @@ class SgMKLDNNConvPostQuantizeProperty : public SubgraphProperty {
 }  // namespace mxnet
 
 #endif  // if MXNET_USE_MKLDNN == 1
+<<<<<<< HEAD:src/operator/subgraph/mkldnn/mkldnn_conv_post_quantize_property.h
 #endif  // MXNET_OPERATOR_SUBGRAPH_MKLDNN_MKLDNN_CONV_POST_QUANTIZE_PROPERTY_H_
+=======
+
+>>>>>>> 0a17493... support int8 sum:src/operator/subgraph/mkldnn/mkldnn_conv_post_quantize_property.cc
