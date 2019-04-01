@@ -297,7 +297,7 @@ Graph QuantizeGraph(Graph &&src) {
       // Only insert dequantize for those Ops supports quantize and not excluded.
       NodePtr mirror_node = mirror_map.at(e.node.get());
       NodeEntry mirror_entry = NodeEntry{mirror_node, e.index, e.version};
-      size_t num_inputs = e.node->num_inputs() - 2;
+      size_t num_inputs = e.node->num_inputs();
       uint32_t min_index = num_inputs + 2 * e.index;
       uint32_t max_index = num_inputs + 2 * e.index + 1;
 
