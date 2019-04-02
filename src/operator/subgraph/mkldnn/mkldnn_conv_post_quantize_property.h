@@ -48,7 +48,7 @@ class SgMKLDNNConvPostQuantizeSelector : public SubgraphSelector {
   SgMKLDNNConvPostQuantizeSelector() {}
 
   bool Select(const nnvm::Node &n) override {
-    if ((!disable_all) && n.op() && (n.op()->name == "_sg_mkldnn_conv" || n.op()->name == "_contrib_quantized_sum" )) {
+    if (n.op() && (n.op()->name == "_sg_mkldnn_conv" || n.op()->name == "_contrib_quantized_sum" )) {
       if(n.op()->name == "_sg_mkldnn_conv") {
       auto const &param = nnvm::get<MKLDNNConvFusionParam>(n.attrs.parsed);
       if (param.full_conv_param.mkldnn_param.quantized) {
@@ -179,8 +179,4 @@ class SgMKLDNNConvPostQuantizeProperty : public SubgraphProperty {
 }  // namespace mxnet
 
 #endif  // if MXNET_USE_MKLDNN == 1
-<<<<<<< HEAD:src/operator/subgraph/mkldnn/mkldnn_conv_post_quantize_property.h
 #endif  // MXNET_OPERATOR_SUBGRAPH_MKLDNN_MKLDNN_CONV_POST_QUANTIZE_PROPERTY_H_
-=======
-
->>>>>>> 0a17493... support int8 sum:src/operator/subgraph/mkldnn/mkldnn_conv_post_quantize_property.cc

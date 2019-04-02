@@ -101,7 +101,7 @@ The storage type of ``elemwise_add`` output depends on storage types of inputs
   return std::vector<std::string>{"output", "min_output", "max_output"};
 })
 .set_attr<nnvm::FInferType>("FInferType", SumType)
-.set_attr<nnvm::FInferShape>("FInferShape", SumShape)
+.set_attr<FInferShape>("FInferShape", SumShape)
 .set_attr<FNeedRequantize>("FNeedRequantize", [](const NodeAttrs& attrs) { return true; })
 .add_argument("lhs", "NDArray-or-Symbol", "first input")      
 .add_argument("rhs", "NDArray-or-Symbol", "4th input")
