@@ -106,6 +106,10 @@ def benchmark_score(symbol_file, ctx, batch_size, num_batches, data_layer_type, 
     if logger is not None:
         logger.info('Loading symbol from file %s' % symbol_file_path)
     sym = mx.sym.load(symbol_file_path)
+    #sym = sym.get_backend_symbol('MKLDNN')
+    graph = mx.viz.plot_network(sym)
+    graph.format = 'png'
+    graph.render('simple') 
     mod = mx.mod.Module(symbol=sym, context=ctx)
     if data_layer_type == "int8":
         dshape = mx.io.DataDesc(name='data', shape=(
@@ -259,6 +263,7 @@ if __name__ == '__main__':
 
         # loading model
         sym, arg_params, aux_params = load_model(symbol_file, param_file, logger)
+        sym = sym.get_backend_symbol('MKLDNN')
 
         # make sure that fp32 inference works on the same images as calibrated quantized model
         logger.info('Skipping the first %d batches' % args.num_skipped_batches)

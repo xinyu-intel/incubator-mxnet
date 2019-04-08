@@ -317,18 +317,18 @@ Example::
 .set_num_outputs(1)
 .set_attr<mxnet::FInferShape>("FInferShape", FlattenShape)
 .set_attr<nnvm::FInferType>("FInferType", ElemwiseType<1, 1>)
-#if MXNET_USE_MKLDNN == 1
-.set_attr<FInferStorageType>("FInferStorageType", FlattenStorageType)
-#endif
+// #if MXNET_USE_MKLDNN == 1
+// .set_attr<FInferStorageType>("FInferStorageType", FlattenStorageType)
+// #endif
 .set_attr<nnvm::FGradient>("FGradient", ElemwiseGradUseNone{ "_backward_copy" })
 .set_attr<FCompute>("FCompute<cpu>", UnaryOp::IdentityCompute<cpu>)
-.set_attr<FComputeEx>("FComputeEx<cpu>", FlattenEx)
-#if MXNET_USE_MKLDNN == 1
-.set_attr<bool>("TIsMKLDNN", true)
-.set_attr<FResourceRequest>("FResourceRequest", [](const NodeAttrs& n) {
-  return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
-})
-#endif
+// .set_attr<FComputeEx>("FComputeEx<cpu>", FlattenEx)
+// #if MXNET_USE_MKLDNN == 1
+// .set_attr<bool>("TIsMKLDNN", true)
+// .set_attr<FResourceRequest>("FResourceRequest", [](const NodeAttrs& n) {
+//   return std::vector<ResourceRequest>{ResourceRequest::kTempSpace};
+// })
+// #endif
 .set_attr<nnvm::FInplaceOption>("FInplaceOption",
   [](const NodeAttrs& attrs) {
     return std::vector<std::pair<int, int> >{{0, 0}};
