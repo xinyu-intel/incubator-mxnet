@@ -231,11 +231,11 @@ NNVM_REGISTER_OP(SoftmaxOutput)
 .set_num_inputs(2)
 .set_num_outputs(1)
 .set_attr_parser(ParamParser<SoftmaxOutputParam>)
-#if MXNET_USE_MKLDNN == 1
-.set_attr<FInferStorageType>("FInferStorageType", SoftmaxOutputStorageType)
-.set_attr<bool>("TIsMKLDNN", true)
-.set_attr<FComputeEx>("FComputeEx<cpu>", SoftmaxOutputComputeExCPU)
-#endif
+// #if MXNET_USE_MKLDNN == 1
+// .set_attr<FInferStorageType>("FInferStorageType", SoftmaxOutputStorageType)
+// .set_attr<bool>("TIsMKLDNN", true)
+// .set_attr<FComputeEx>("FComputeEx<cpu>", SoftmaxOutputComputeExCPU)
+// #endif
 .set_attr<nnvm::FListInputNames>("FListInputNames", [](const NodeAttrs& attrs) {
   return std::vector<std::string>{"data", "label"};
 })
