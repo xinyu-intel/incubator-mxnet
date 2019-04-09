@@ -106,10 +106,7 @@ def benchmark_score(symbol_file, ctx, batch_size, num_batches, data_layer_type, 
     if logger is not None:
         logger.info('Loading symbol from file %s' % symbol_file_path)
     sym = mx.sym.load(symbol_file_path)
-    #sym = sym.get_backend_symbol('MKLDNN')
-    graph = mx.viz.plot_network(sym)
-    graph.format = 'png'
-    graph.render('simple') 
+    sym = sym.get_backend_symbol('MKLDNN')
     mod = mx.mod.Module(symbol=sym, context=ctx)
     if data_layer_type == "int8":
         dshape = mx.io.DataDesc(name='data', shape=(
