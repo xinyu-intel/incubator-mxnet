@@ -171,7 +171,6 @@ if __name__ == '__main__':
     if args.use_gluon_model == True:
         prefix = convert_from_gluon(model_name=args.model, image_shape=args.image_shape, classes=1000, logger=logger)
         epoch = 0
-        prefix = './model/mobilenetv2_1.0opt'
         sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
     elif args.model == 'custom':
         dir_path = os.path.dirname(os.path.realpath(__file__))
