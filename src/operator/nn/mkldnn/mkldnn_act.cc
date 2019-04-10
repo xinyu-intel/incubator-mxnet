@@ -23,21 +23,10 @@
  * \author Da Zheng
 */
 
-#include <dmlc/logging.h>
-#include <dmlc/parameter.h>
-#include <mxnet/operator.h>
-#include <algorithm>
-#include <map>
-#include <vector>
-#include <string>
-#include <utility>
-#include "../../operator_common.h"
-#include "../activation-inl.h"
-#include "./mkldnn_base-inl.h"
-
 #if MXNET_USE_MKLDNN == 1
-
-#include <mkldnn.hpp>
+#include "./mkldnn_act-inl.h"
+#include "./mkldnn_base-inl.h"
+#include "./mkldnn_ops-inl.h"
 
 namespace mxnet {
 namespace op {
@@ -56,22 +45,6 @@ bool SupportMKLDNNAct(const ActivationParam& param, const NDArray &input) {
       (input.dtype() != mshadow::kFloat32))
     return false;
   return SupportMKLDNNAct(param);
-}
-
-static inline mkldnn::algorithm GetMKLDNNActAlgo(const ActivationParam& param) {
-  switch (param.act_type) {
-    case activation::kReLU:
-      return mkldnn::algorithm::eltwise_relu;
-    case activation::kSigmoid:
-      return mkldnn::algorithm::eltwise_logistic;
-    case activation::kTanh:
-      return mkldnn::algorithm::eltwise_tanh;
-    case activation::kSoftReLU:
-      return mkldnn::algorithm::eltwise_soft_relu;
-    default:
-      LOG(FATAL) << "unknown activation type";
-      return mkldnn::algorithm::eltwise_relu;
-  }
 }
 
 typedef std::shared_ptr<mkldnn::eltwise_forward::primitive_desc> mkldnn_act_pdesc_ptr;

@@ -23,9 +23,11 @@
 
 #include <string>
 #include <vector>
+#include "../../nn/activation-inl.h"
+#include "../../nn/mkldnn/mkldnn_ops-inl.h"
+#include "../../tensor/matrix_op-inl.h"
 #include "../common.h"
 #include "../subgraph_property.h"
-#include "../../nn/activation-inl.h"
 
 namespace mxnet {
 namespace op {
@@ -105,11 +107,18 @@ class SgMKLDNNConvSelector : public SubgraphSelector {
         if ((!disable_conv_relu) && new_node.op()->name == "Activation") {
           const ActivationParam &param =
               nnvm::get<ActivationParam>(new_node.attrs.parsed);
-          if (param.act_type == activation::kReLU) {
+          if (SupportMKLDNNAct(param)) {
             matched_list.push_back(&new_node);
-            // If we find conv+relu, then we can't match anymore.
-            // TODO(zhennan): mkldnn only supports convolution + relu + sum in
+            // If we find conv+act, then we can't match anymore.
+            // TODO(zhennan): mkldnn only supports convolution + act + sum in
             // int8, not in fp32. So we disable this pattern at moment.
+            status = kSuccess;
+            return true;
+          }
+        } else if ((!disable_conv_relu) && new_node.op()->name == "clip") {
+          const ClipParam &param = nnvm::get<ClipParam>(new_node.attrs.parsed);
+          if (param.a_min == 0.f) {
+            matched_list.push_back(&new_node);
             status = kSuccess;
             return true;
           }
@@ -188,12 +197,12 @@ class SgMKLDNNConvProperty : public SubgraphProperty {
         n->attrs.dict["with_sum"] = "true";
         _with_sum = true;
 
-      } else if (sub_name == "Activation") {
-        node_name << "relu_";
+      } else if (sub_name == "Activation" || sub_name == "clip") {
+        node_name << "act_";
         if (!_with_sum) {
-          n->attrs.dict["with_relu"] = "true";
+          n->attrs.dict["with_act"] = "true";
         } else {
-          n->attrs.dict["with_postsum_relu"] = "true";
+          n->attrs.dict["with_postsum_act"] = "true";
         }
       }
     });
