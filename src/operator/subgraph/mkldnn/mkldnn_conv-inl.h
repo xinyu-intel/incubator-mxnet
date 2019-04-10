@@ -50,7 +50,7 @@ static inline bool IsOutputUInt8(const MKLDNNConvFusionParam& param) {
     return IsOutputUInt8Helper(param.full_conv_param.act_param.alg);
   } else if (mkldnn_param.with_postsum_act) {
     CHECK(param.full_conv_param.postsum_act_param.alg != mkldnn::algorithm::algorithm_undef);
-    return IsOutputUInt8Helper(param.full_conv_param.act_param.alg);
+    return IsOutputUInt8Helper(param.full_conv_param.postsum_act_param.alg);
   }
   return false;
 }
