@@ -48,11 +48,17 @@ cp ../../build/cpp-package/example/mlp_cpu .
 cp ../../build/cpp-package/example/mlp_gpu .
 ./mlp_gpu
 
- cp ../../build/cpp-package/example/test_optimizer .
- ./test_optimizer
+cp ../../build/cpp-package/example/test_optimizer .
+./test_optimizer
+
+cp ../../build/cpp-package/example/test_kvstore .
+./test_kvstore
 
 cp ../../build/cpp-package/example/test_score .
 ./test_score 0.93
+
+cp ../../build/cpp-package/example/test_ndarray_copy .
+./test_ndarray_copy
 
 sh unittests/unit_test_mlp_csv.sh
 

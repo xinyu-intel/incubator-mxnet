@@ -53,7 +53,7 @@ namespace mxnet {
 NDArray::NDArray(const NDArrayStorageType stype, const mxnet::TShape &shape, Context ctx,
     bool delay_alloc, int dtype, std::vector<int> aux_types,
     mxnet::ShapeVector aux_shapes, mxnet::TShape storage_shape) : shape_(shape),
-  dtype_(dtype), storage_type_(stype), entry_({nullptr, 0, 0}) {
+  dtype_(dtype), storage_type_(stype), entry_(nullptr) {
   // Assign default aux types if not given
   if (aux_types.size() == 0
       && stype != kDefaultStorage) {
@@ -113,20 +113,22 @@ NDArray::Chunk::~Chunk() {
   // We want to delete mkldnn memory after deleting the variable.
   mem.mem = this->mkl_mem_;
 #endif
-  Engine::Get()->DeleteVariable([mem, skip_free](RunContext s) {
-    if (skip_free == false) {
+  if (auto engine = engine_ref_.lock()) {
+    engine->DeleteVariable([mem, skip_free](RunContext s) {
+      if (skip_free == false) {
 #if MXNET_USE_MKLDNN == 1
-      if (mem.mem) {
-        CHECK_LE(mem.mem->GetSize(), mem.h.size);
-        CHECK_EQ(mem.mem->GetDataHandle(), mem.h.dptr);
-      }
+        if (mem.mem) {
+          CHECK_LE(mem.mem->GetSize(), mem.h.size);
+          CHECK_EQ(mem.mem->GetDataHandle(), mem.h.dptr);
+        }
 #endif
-      Storage::Get()->Free(mem.h);
-      for (const auto& aux : mem.aux_h) {
-        Storage::Get()->Free(aux);
+        Storage::Get()->Free(mem.h);
+        for (const auto &aux : mem.aux_h) {
+          Storage::Get()->Free(aux);
+        }
       }
-    }
-  }, shandle.ctx, var);
+    }, shandle.ctx, var);
+  }
 }
 
 void NDArray::Chunk::CheckAndAllocData(const mxnet::TShape &shape, int dtype) {
@@ -169,7 +171,7 @@ nnvm::Symbol NDArray::get_autograd_symbol() const {
 #if MXNET_USE_MKLDNN == 1
 
 NDArray::NDArray(mkldnn::memory::primitive_desc mem_pd)
-    : storage_type_(kDefaultStorage), entry_({nullptr, 0, 0}) {
+    : storage_type_(kDefaultStorage), entry_(nullptr) {
   auto mem_desc = mem_pd.desc();
   shape_ = mxnet::TShape(mem_desc.data.dims, mem_desc.data.dims + mem_desc.data.ndims);
   dtype_ = get_mxnet_type(mem_desc.data.data_type);
@@ -179,7 +181,7 @@ NDArray::NDArray(mkldnn::memory::primitive_desc mem_pd)
 }
 
 NDArray::NDArray(const std::shared_ptr<mkldnn::memory> &mkldnn_mem)
-    : storage_type_(kDefaultStorage), entry_({nullptr, 0, 0}) {
+    : storage_type_(kDefaultStorage), entry_(nullptr) {
   auto mem_pd = mkldnn_mem->get_primitive_desc();
   auto mem_desc = mem_pd.desc();
   shape_ = mxnet::TShape(mem_desc.data.dims, mem_desc.data.dims + mem_desc.data.ndims);
@@ -337,8 +339,8 @@ NDArray NDArray::data_ndarray() const {
 }
 
 struct NDArrayDLManager {
-    NDArray handle;  // ref NDArray
-    DLManagedTensor tensor;
+  NDArray handle;  // ref NDArray
+  DLManagedTensor tensor;
 };
 
 DLManagedTensor* NDArray::ToDLPack() const {
@@ -353,14 +355,19 @@ DLManagedTensor* NDArray::ToDLPack() const {
   return &(dlmanager->tensor);
 }
 
-NDArray NDArray::FromDLPack(const DLManagedTensor* tensor) {
-  const DLTensor &dl_tensor = tensor->dl_tensor;
-  auto deleter = [tensor](){
-    if (tensor->deleter != nullptr) {
-      tensor->deleter(const_cast<DLManagedTensor*>(tensor));
+NDArray NDArray::FromDLPack(const DLManagedTensor* tensor, bool transient_handle) {
+  DLManagedTensor *tensor_copy = transient_handle
+                               ? new DLManagedTensor(*tensor)
+                               : const_cast<DLManagedTensor*>(tensor);
+  auto deleter = [tensor_copy, transient_handle](){
+    if (tensor_copy->deleter != nullptr) {
+      tensor_copy->deleter(tensor_copy);
+    }
+    if (transient_handle) {
+      delete tensor_copy;
     }
   };
-  return NDArray(TBlob(dl_tensor), dl_tensor.ctx.device_id, deleter);
+  return NDArray(TBlob(tensor_copy->dl_tensor), tensor_copy->dl_tensor.ctx.device_id, deleter);
 }
 
 bool NDArray::fresh_out_grad() const {
@@ -549,7 +556,7 @@ const mkldnn::memory *NDArray::GetMKLDNNDataReorder(
     // If they have different shapes, we need to reshape the array first.
     // Since this method will only be used inside an operator, we can call
     // MKLDNNDataReshape to reshape an array.
-    mxnet::TShape required_shape(desc2.data.ndims);
+    mxnet::TShape required_shape(desc2.data.ndims, -1);
     for (int i = 0; i < desc2.data.ndims; i++)
       required_shape[i] = desc2.data.dims[i];
     NDArray reshaped = MKLDNNDataReshape(required_shape);
@@ -575,7 +582,7 @@ NDArray NDArray::Reorder2Default() const {
 
   // create new ndarray from  mkldnn layout
   mkldnn::memory::desc from_desc = ptr_->mkl_mem_->GetPrimitiveDesc().desc();
-  mxnet::TShape tshape(from_desc.data.ndims);
+  mxnet::TShape tshape(from_desc.data.ndims, -1);
   for (int i = 0; i < from_desc.data.ndims; i++) tshape[i] = from_desc.data.dims[i];
   NDArray ret(tshape, ctx(), false, dtype());
   mkldnn::memory::primitive_desc def_pd = ptr_->mkl_mem_->GetPrimitiveDesc(format);
@@ -1191,8 +1198,8 @@ void CopyFromTo(const NDArray& from, const NDArray& to, int priority, bool is_op
   CHECK(from.shape() == to.shape())
       << "operands shape mismatch"
       << "from.shape = " << from.shape() << " to.shape=" << to.shape();
-  CHECK(from.shape().ndim() != 0)
-      << "source operands have zero dimension shape";
+  CHECK(!mxnet::op::shape_is_none(from.shape()))
+      << "source operands have undefined shape";
   // important: callback must always capture by value
   const Context from_ctx = from.ctx();
   const int a = from_ctx.dev_mask();
@@ -1574,6 +1581,9 @@ static const uint32_t NDARRAY_V1_MAGIC = 0xF993fac8;
 static const uint32_t NDARRAY_V2_MAGIC = 0xF993fac9;
 
 void NDArray::Save(dmlc::Stream *strm) const {
+  // TODO(junwu): Support this after NumPy operators are merged
+  CHECK(!Imperative::Get()->is_np_shape())
+      << "Saving ndarray within the scope of np_shape is not supported.";
   // write magic number to mark this version
   // for storage type
   strm->Write(NDARRAY_V2_MAGIC);
@@ -1650,7 +1660,7 @@ bool LegacyTShapeLoad(dmlc::Stream *strm, mxnet::TShape *shape, const uint32_t m
     default:
       // meet legacy mxnet::TShape, magic is ndim here
       uint32_t ndim = magic;
-      *shape = mxnet::TShape(ndim);
+      *shape = mxnet::TShape(ndim, -1);
       std::vector<uint32_t> buffer(ndim);
       size_t nread = ndim * sizeof(uint32_t);
       if (strm->Read(buffer.data(), nread) != nread) return false;
@@ -1663,7 +1673,7 @@ bool NDArray::LegacyLoad(dmlc::Stream *strm, const uint32_t magic) {
   // load shape
   mxnet::TShape shape;
   if (!LegacyTShapeLoad(strm, &shape, magic)) return false;
-  if (shape.ndim() == 0) {
+  if (mxnet::op::shape_is_none(shape)) {
     *this = NDArray(); return true;
   }
   // load context
@@ -1691,6 +1701,9 @@ bool NDArray::LegacyLoad(dmlc::Stream *strm, const uint32_t magic) {
 }
 
 bool NDArray::Load(dmlc::Stream *strm) {
+  // TODO(junwu): Support this after NumPy operators are merged
+  CHECK(!Imperative::Get()->is_np_shape())
+      << "Loading ndarray within the scope of np_shape is not supported.";
   uint32_t magic;
   if (strm->Read(&magic, sizeof(uint32_t)) != sizeof(uint32_t)) return false;
   if (magic != NDARRAY_V2_MAGIC) {
