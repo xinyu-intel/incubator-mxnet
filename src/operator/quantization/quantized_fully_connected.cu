@@ -75,15 +75,23 @@ void QuantizedFullyConnectedForwardGPU(const nnvm::NodeAttrs& attrs,
   mxnet::TShape oshape = out.shape_;
   // (m, n) * (k, n).T = (m, k)
   // A * B.T = C
-  if (dshape.ndim() != 2) {
-    CHECK(param.flatten)
-      << "Currently, QuantizedFullyConnected Op only supports flatten=true "
-      << "when ishape.ndim()!=2 for GPU.";
-  }
+  // if (dshape.ndim() != 2) {
+  //   CHECK(param.flatten)
+  //     << "Currently, QuantizedFullyConnected Op only supports flatten=true "
+  //     << "when ishape.ndim()!=2 for GPU.";
+  // }
 
   // row_C = col_C(T) = cublas(col_B * col_A(T)) = cublas(row_B(T), row_A)
   // row_C = col_C(T) = cublas(col_B(T) * col_A(T)) = cublas(row_B, row_A)
-  const int m = dshape[0], n = dshape.ProdShape(1, dshape.ndim()), k = wshape[0];
+  int m = 0, n = 0, k = 0;
+  if (!param.flatten) {
+    m = dshape.ProdShape(0, dshape.ndim()-1);
+    n = dshape[dshape.ndim()-1];
+    k = wshape[0];
+  } else {
+    m = dshape[0], n = dshape.ProdShape(1, dshape.ndim()), k = wshape[0];
+  }
+  // const int m = dshape[0], n = dshape.ProdShape(1, dshape.ndim()), k = wshape[0];
   CmpType alpha = 1.0f;
   CmpType beta  = 0.0f;
   const cudaDataType src_type = mshadow::DataType<SrcType>::kCudaFlag;
