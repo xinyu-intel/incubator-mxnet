@@ -73,13 +73,6 @@ struct LeakyReLUParam : public dmlc::Parameter<LeakyReLUParam> {
     DMLC_DECLARE_FIELD(upper_bound).set_default(0.334f)
     .describe("Upper bound of random slope. (For rrelu only)");
   }
-
-  bool operator==(const LeakyReLUParam& other) const {
-    return this->act_type == other.act_type &&
-           this->slope == other.slope &&
-           this->lower_bound == other.lower_bound &&
-           this->upper_bound == other.upper_bound;
-  }
 };
 
 template<typename xpu, typename DType>
@@ -544,20 +537,6 @@ class LeakyReLUProp : public OperatorProperty {
 #endif  // DMLC_USE_CXX11
 }  // namespace op
 }  // namespace mxnet
-
-namespace std {
-template<>
-struct hash<mxnet::op::LeakyReLUParam> {
-  size_t operator()(const mxnet::op::LeakyReLUParam& val) {
-    size_t ret = 0;
-    ret = dmlc::HashCombine(ret, val.act_type);
-    ret = dmlc::HashCombine(ret, val.slope);
-    ret = dmlc::HashCombine(ret, val.lower_bound);
-    ret = dmlc::HashCombine(ret, val.upper_bound);
-    return ret;
-  }
-};
-}  // namespace std
 
 #endif  // MXNET_OPERATOR_LEAKY_RELU_INL_H_
 
