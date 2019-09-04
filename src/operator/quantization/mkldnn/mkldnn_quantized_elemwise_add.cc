@@ -39,6 +39,79 @@ static inline float GetScale(const NDArray& data, float min, float max) {
   return data_range / MaxAbs(min, max);
 }
 
+class MKLDNNQuantizedElemwiseAddFwd {
+ public:
+  mkldnn::sum::primitive_desc fwd_pd;
+
+  MKLDNNQuantizedElemwiseAddFwd(
+               const mkldnn::memory::desc &output_desc,
+               const std::vector<float> &scales,
+               const std::vector<mkldnn::memory::primitive_desc> &data_md)
+      : fwd_pd(output_desc, scales, data_md) {
+    data_.resize(data_md.size());
+  }
+
+  void SetNewMem(const std::vector<const mkldnn::memory *> &in_data, const mkldnn::memory &output);
+
+  const mkldnn::sum &GetFwd() const { return *fwd_; }
+
+ private:
+  std::shared_ptr<mkldnn::sum> fwd_;
+  std::vector<std::shared_ptr<mkldnn::memory>> data_;
+  std::vector<mkldnn::primitive::at> data_mem_;
+  std::shared_ptr<mkldnn::memory> out_;
+};
+
+static MKLDNNQuantizedElemwiseAddFwd &GetQuantizedElemwiseAddForward(
+    const mkldnn::memory::desc &output_desc, const std::vector<float> &scales,
+    const std::vector<NDArray> &in_data, const std::vector<NDArray> &out_data,
+    const std::vector<mkldnn::memory::primitive_desc> &data_md) {
+#if DMLC_CXX11_THREAD_LOCAL
+  static thread_local std::unordered_map<OpSignature, MKLDNNQuantizedElemwiseAddFwd, OpHash> fwds;
+#else
+  static MX_THREAD_LOCAL std::unordered_map<OpSignature, MKLDNNQuantizedElemwiseAddFwd, OpHash> fwds;
+#endif
+  OpSignature key;
+  key.AddSign(in_data);
+  key.AddSign(in_data[quantized_elemwise_add_enum::kAMin].data().dptr<float>()[0]);
+  key.AddSign(in_data[quantized_elemwise_add_enum::kAMax].data().dptr<float>()[0]);
+  key.AddSign(in_data[quantized_elemwise_add_enum::kBMin].data().dptr<float>()[0]);
+  key.AddSign(in_data[quantized_elemwise_add_enum::kBMax].data().dptr<float>()[0]);
+  key.AddSign(out_data);
+  key.AddSign(out_data[quantized_elemwise_add_enum::kMin].data().dptr<float>()[0]);
+  key.AddSign(out_data[quantized_elemwise_add_enum::kMax].data().dptr<float>()[0]);
+
+  auto it = fwds.find(key);
+  if (it == fwds.end()) {
+    MKLDNNQuantizedElemwiseAddFwd fwd(output_desc, scales, data_md);
+    it = AddToCache(&fwds, key, fwd);
+  }
+  return it->second;
+}
+
+void MKLDNNQuantizedElemwiseAddFwd::SetNewMem(const std::vector<const mkldnn::memory *> &in_data,
+                             const mkldnn::memory &output) {
+  auto num_inputs = data_.size();
+  CHECK_EQ(in_data.size(), num_inputs);
+  for (index_t i = 0; i < static_cast<index_t>(num_inputs); ++i) {
+    if (this->data_[i] == nullptr) {
+      this->data_[i] = std::shared_ptr<mkldnn::memory>(
+          new mkldnn::memory(in_data[i]->get_primitive_desc(), in_data[i]->get_data_handle()));
+      this->data_mem_.push_back(*this->data_[i]);
+    } else {
+      this->data_[i]->set_data_handle(in_data[i]->get_data_handle());
+    }
+  }
+  if (this->out_ == nullptr)
+    this->out_ = std::shared_ptr<mkldnn::memory>(
+        new mkldnn::memory(fwd_pd.dst_primitive_desc(), output.get_data_handle()));
+  else
+    this->out_->set_data_handle(output.get_data_handle());
+
+  if (this->fwd_ == nullptr)
+    this->fwd_.reset(new mkldnn::sum(fwd_pd, this->data_mem_, *this->out_));
+}
+
 static void MKLDNNQuantizedElemwiseAddForward(const nnvm::NodeAttrs& attrs, const OpContext& ctx,
                                               const std::vector<NDArray>& in_data,
                                               const std::vector<OpReqType>& req,
@@ -155,10 +228,10 @@ static void MKLDNNQuantizedElemwiseAddForward(const nnvm::NodeAttrs& attrs, cons
     }
   }
 
-  std::vector<mkldnn::primitive::at> in_prims;
   std::vector<mkldnn::memory::primitive_desc> in_pds;
-  in_prims.push_back(*dataA_mem);
-  in_prims.push_back(*dataB_mem);
+  std::vector<const mkldnn::memory *> data_mem;
+  data_mem.push_back(dataA_mem);
+  data_mem.push_back(dataB_mem);
   in_pds.push_back(dataA_mem->get_primitive_desc());
   in_pds.push_back(dataB_mem->get_primitive_desc());
   size_t i_ndim = in_data[quantized_elemwise_add_enum::kDataA].shape().ndim();
@@ -169,15 +242,16 @@ static void MKLDNNQuantizedElemwiseAddForward(const nnvm::NodeAttrs& attrs, cons
   mkldnn::memory::format i_fmt = static_cast<mkldnn::memory::format>(
                                    in_pds[quantized_elemwise_add_enum::kDataA].desc().data.format);
   auto output_desc = mkldnn::memory::desc(i_dims, output_data_type, i_fmt);
-  mkldnn::sum::primitive_desc pdesc(output_desc, scales, in_pds);
-  auto mem = CreateMKLDNNMem(out_data[quantized_elemwise_add_enum::kOut],
-                             pdesc.dst_primitive_desc(),
-                             req[0],
-                             &in_data[0]);
-  MKLDNNStream *stream = MKLDNNStream::Get();
-  stream->RegisterPrim(mkldnn::sum(pdesc, in_prims, *mem.second));
-  CommitOutput(out_data[quantized_elemwise_add_enum::kOut], mem);
-  stream->Submit();
+
+  MKLDNNQuantizedElemwiseAddFwd &fwd = GetQuantizedElemwiseAddForward(output_desc, scales, in_data, out_data, in_pds);
+  mxnet::mkldnn_output_t out_mem = CreateMKLDNNMem(out_data[quantized_elemwise_add_enum::kOut],
+                                                   fwd.fwd_pd.dst_primitive_desc(),
+                                                   req[0],
+                                                   &in_data[0]);
+  fwd.SetNewMem(data_mem, *out_mem.second);
+  MKLDNNStream::Get()->RegisterPrim(fwd.GetFwd());
+  CommitOutput(out_data[quantized_elemwise_add_enum::kOut], out_mem);
+  MKLDNNStream::Get()->Submit();
 
   out_data[quantized_elemwise_add_enum::kMin].data().dptr<float>()[0] = output_min;
   out_data[quantized_elemwise_add_enum::kMax].data().dptr<float>()[0] = output_max;
