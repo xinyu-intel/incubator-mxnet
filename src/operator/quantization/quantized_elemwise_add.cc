@@ -35,9 +35,19 @@ static bool ElemwiseAddShape(const nnvm::NodeAttrs& attrs,
   CHECK_EQ(in_shape->size(), 6U);
   // C, C_min, C_max
   CHECK_EQ(out_shape->size(), 3U);
-  CHECK_EQ((*in_shape)[0], (*in_shape)[1]);
 
+  mxnet::ShapeVector in_data;
+  mxnet::ShapeVector out_data;
+  in_data.push_back((*in_shape)[0]);
+  in_data.push_back((*in_shape)[1]);
+  out_data.push_back((*out_shape)[0]);
 
+  ElemwiseAttr<mxnet::TShape, shape_is_none, shape_assign, true, shape_string>(
+    attrs, &in_data, &out_data, mxnet::TShape());
+
+  SHAPE_ASSIGN_CHECK(*in_shape, 0, in_data[0]);
+  SHAPE_ASSIGN_CHECK(*in_shape, 1, in_data[1]);
+  SHAPE_ASSIGN_CHECK(*out_shape, 0, out_data[0]);
   SHAPE_ASSIGN_CHECK(*in_shape, 2, TShape{1});
   SHAPE_ASSIGN_CHECK(*in_shape, 3, TShape{1});
   SHAPE_ASSIGN_CHECK(*in_shape, 4, TShape{1});
