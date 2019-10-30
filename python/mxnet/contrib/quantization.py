@@ -577,7 +577,7 @@ def quantize_model_mkldnn(sym, arg_params, aux_params,
                           data_names=('data',), label_names=('softmax_label',),
                           ctx=cpu(), excluded_sym_names=None, excluded_op_names=None,
                           calib_mode='entropy', calib_data=None, num_calib_examples=None,
-                          quantized_dtype='int8', logger=logging):
+                          quantized_dtype='int8', quantize_mode='smart', logger=logging):
     """User-level API for generating a fusion + quantized model from a FP32 model
     w/ or w/o calibration with Intel MKL-DNN.
     The backend quantized operators are only enabled for Linux systems. Please do not run
@@ -613,7 +613,7 @@ def quantize_model_mkldnn(sym, arg_params, aux_params,
 
 def quantize_graph(sym, arg_params, aux_params, ctx=cpu(),
                    excluded_sym_names=None, excluded_op_names=None, calib_mode='entropy',
-                   quantized_dtype='int8', logger=logging):
+                   quantized_dtype='int8', quantize_mode='smart', logger=logging):
     """User-level API for generating a quantized model from a FP32 model w/o calibration
     and a collector for naive or entropy calibration.
     The backend quantized operators are only enabled for Linux systems. Please do not run
@@ -648,6 +648,10 @@ def quantize_graph(sym, arg_params, aux_params, ctx=cpu(),
         The quantized destination type for input data. Currently support 'int8'
         , 'uint8' and 'auto'. 'auto' means automatically select output type according to calibration result.
         Default value is 'int8'.
+    quantize_mode : str
+        The mode that quantization pass to apply. Support 'full' and 'smart'.
+        'full' means quantize all operator if possible.
+        'smart' means quantization pass will smartly choice which operator should be quantized.
     logger : Object
         A logging object for printing information during the process of quantization.
     Returns
@@ -672,7 +676,7 @@ def quantize_graph(sym, arg_params, aux_params, ctx=cpu(),
                                          excluded_operators=excluded_op_names,
                                          offline_params=list(
                                              arg_params.keys()),
-                                         quantized_dtype=quantized_dtype)
+                                         quantized_dtype=quantized_dtype, quantize_mode=quantize_mode)
 
     th_dict = {}
     collector = None
@@ -757,7 +761,7 @@ def calib_graph(qsym, arg_params, aux_params, collector,
 
 def quantize_net(network, quantized_dtype='auto',
                  exclude_layers=None, exclude_layers_match=None, exclude_operators=None,
-                 calib_data=None, data_shapes=None, calib_mode='none',
+                 calib_data=None, data_shapes=None, calib_mode='none', quantize_mode='smart',
                  num_calib_examples=None, ctx=cpu(), logger=logging):
     """User-level API for Gluon users to generate a quantized SymbolBlock from a FP32 HybridBlock w/ or w/o calibration.
     The backend quantized operators are only enabled for Linux systems. Please do not run
@@ -872,7 +876,8 @@ def quantize_net(network, quantized_dtype='auto',
     qsym, qarg_params, aux_params, collector = quantize_graph(
         sym=symnet, arg_params=args, aux_params=auxs, ctx=ctx,
         excluded_sym_names=exclude_layers, excluded_op_names=exclude_operators,
-        calib_mode=calib_mode, quantized_dtype=quantized_dtype, logger=logger)
+        calib_mode=calib_mode, quantized_dtype=quantized_dtype,
+        quantize_mode=quantize_mode, logger=logger)
 
     if calib_mode is not None and calib_mode != 'none':
         if not isinstance(ctx, Context):
