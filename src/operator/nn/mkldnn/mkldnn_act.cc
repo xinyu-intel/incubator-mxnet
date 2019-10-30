@@ -199,7 +199,6 @@ mkldnn::eltwise_backward::primitive_desc GetActBwdDescImpl(
   auto alg = param.alg;
 
   MSHADOW_REAL_TYPE_SWITCH_EX(dtype, DType, AccRealX, {
-    DType alpha = 0;
     mkldnn::eltwise_forward::desc fw_desc(mkldnn::prop_kind::forward_training,
                                           alg, data_md, param.slope);
     mkldnn::eltwise_forward::primitive_desc fw_pdesc(fw_desc, cpu_engine);
